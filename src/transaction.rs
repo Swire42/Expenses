@@ -2,7 +2,7 @@ use chrono::{NaiveDate};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-use crate::tags::Tag;
+use crate::tags::TagRef;
 use crate::accounts::AccountRef;
 use crate::money::Amount;
 
@@ -14,7 +14,7 @@ pub struct Purchase {
     date: NaiveDate,
     amount: Amount,
     desc: String,
-    tag: Tag,
+    tag: TagRef,
     buyer: AccountRef,
     users: Consumers,
 }

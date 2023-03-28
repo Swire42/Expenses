@@ -2,6 +2,8 @@ use std::io::{stdout, Write};
 use std::fmt;
 use chrono::{Local, NaiveDate};
 
+use crate::completion::Completor;
+
 enum InputEvent {
     Up,
     Down,
@@ -11,7 +13,14 @@ enum InputEvent {
     Backspace,
     Tab,
     BackTab,
+    Enter,
     Char(char),
+}
+
+enum Action {
+    Nothing,
+    Next,
+    Prev,
 }
 
 struct DateInput {
@@ -23,15 +32,14 @@ impl DateInput {
         Self{date}
     }
 
-    /// Return true if finised
-    pub fn input(&mut self, event: InputEvent) -> bool {
+    pub fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
         match event {
             Up => self.date = self.date.succ_opt().unwrap(),
             Down => self.date = self.date.pred_opt().unwrap(),
             _ => (),
         }
-        false
+        Action::Nothing
     }
 }
 
@@ -54,8 +62,7 @@ impl AmountInput {
         }
     }
 
-    /// Return true if finised
-    pub fn input(&mut self, event: InputEvent) -> bool {
+    pub fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
 
         match event {
@@ -79,40 +86,40 @@ impl AmountInput {
                     },
                     _ => unreachable!(),
                 }
-                false
+                Action::Nothing
             }
             Char(c) => {
                 if let Some(Ok(val)) = c.to_digit(10).map(usize::try_from) {
                     match self.separator_dist {
                         None => {
                             self.cents = self.cents * 10 + val * 100;
-                            false
+                            Action::Nothing
                         },
                         Some(0) => {
                             self.cents += val * 10;
                             self.separator_dist = Some(1);
-                            false
+                            Action::Nothing
                         },
                         Some(1) => {
                             self.cents += val;
                             self.separator_dist = Some(2);
-                            true
+                            Action::Next
                         },
-                        Some(2) => true,
+                        Some(2) => Action::Next,
                         _ => unreachable!(),
                     }
                 } else if c == '.' || c == ',' {
                     if self.separator_dist == None {
                         self.separator_dist = Some(0);
-                        false
+                        Action::Nothing
                     } else {
-                        true
+                        Action::Next
                     }
                 } else {
-                    false
+                    Action::Nothing
                 }
             },
-            _ => false,
+            _ => Action::Nothing,
         }
     }
 }
@@ -140,8 +147,7 @@ impl TextInput {
         Self{text: String::new()}
     }
 
-    /// Return true if finised
-    pub fn input(&mut self, event: InputEvent) -> bool {
+    pub fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
 
         match event {
@@ -154,7 +160,7 @@ impl TextInput {
             _ => (),
         }
 
-        false
+        Action::Nothing
     }
 }
 
@@ -164,64 +170,169 @@ impl fmt::Display for TextInput {
     }
 }
 
+pub struct CompletorInput {
+    text: String,
+    decor_prefix: char,
+    decor_suffix: char,
+    strict: bool, // enforce match
+    compl: Completor,
+    selection: Option<usize>,
+}
+
+impl CompletorInput {
+    pub fn new(decor_prefix: char, decor_suffix: char, strict: bool, compl: Completor) -> Self {
+        Self{text: String::new(), decor_prefix, decor_suffix, strict, compl, selection: None}
+    }
+
+    pub fn input(&mut self, event: InputEvent) -> Action {
+        use InputEvent::*;
+
+        match event {
+            Backspace => {
+                self.selection = None;
+                let _ = self.text.pop();
+                self.compl.update(&self.text);
+            },
+            Char(c) => {
+                self.selection = None;
+                self.text.push(c);
+                self.compl.update(&self.text);
+                if self.strict && self.compl.matches().is_empty() {
+                    let _ = self.text.pop();
+                    self.compl.update(&self.text);
+                }
+            },
+            Down => {
+                if !self.compl.matches().is_empty() {
+                    self.selection = Some(self.selection.map_or(0, |x| usize::min(x+1, self.compl.matches().len()-1)));
+                }
+            },
+            Up => {
+                self.selection = match self.selection {
+                    None | Some(0) => None,
+                    Some(x) => Some(x-1),
+                }
+            },
+            Enter => {
+                if self.strict {
+                    self.text = self.compl.matches()[self.selection.unwrap_or(0)].clone();
+                    self.compl.update(&self.text);
+                } else {
+                    if let Some(n) = self.selection {
+                        self.text = self.compl.matches()[n].clone();
+                        self.compl.update(&self.text);
+                    }
+                }
+                return Action::Next;
+            }
+            _ => (),
+        }
+
+        Action::Nothing
+    }
+
+    pub fn display(&self, line: u16, active: bool) -> crossterm::Result<()> {
+        use crossterm::{
+            terminal,
+            queue,
+            cursor,
+            style::{Print, PrintStyledContent, StyledContent, Stylize}
+        };
+
+        let mut tmp = format!("{}{}{}", self.decor_prefix, self.text, self.decor_suffix).bold();
+        if active && self.selection.is_none() {
+            tmp = tmp.reverse();
+        }
+        queue!(stdout(), cursor::MoveTo(0, line), PrintStyledContent(tmp))?;
+
+        if active {
+            let (cols, rows) = terminal::size()?;
+            for (lig, (n, sugg)) in ((line+1)..rows).zip(self.compl.matches().iter().enumerate()) {
+                let tmp = if Some(n) == self.selection {
+                    format!(">{}", sugg).bold().reverse()
+                } else {
+                    format!(" {}", sugg).bold()
+                };
+                queue!(stdout(), cursor::MoveTo(0, lig), PrintStyledContent(tmp))?;
+            }
+            queue!(stdout(), cursor::MoveTo(1+self.text.len() as u16, line), cursor::Show, cursor::SetCursorStyle::BlinkingBar)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum TISelector {
+enum PurchaseInputFocus {
     Date,
     Amount,
     Desc,
+    Tag,
 }
 
-impl TISelector {
+impl PurchaseInputFocus {
     pub fn new() -> Self {
         Self::Date
     }
 
     pub fn next(&mut self) {
-        use TISelector::*;
+        use PurchaseInputFocus::*;
         *self = match self {
             Date => Amount,
             Amount => Desc,
-            Desc => Date,
+            Desc => Tag,
+            Tag => Date,
         }
     }
 
     pub fn prev(&mut self) {
-        use TISelector::*;
+        use PurchaseInputFocus::*;
         *self = match self {
-            Date => Desc,
+            Date => Tag,
             Amount => Date,
             Desc => Amount,
+            Tag => Desc,
         }
     }
 }
 
-struct TransactionInput {
-    selector: TISelector,
+struct PurchaseInput {
+    focus: PurchaseInputFocus,
     date: DateInput,
     amount: AmountInput,
     desc: TextInput,
+    tag: CompletorInput,
 }
 
-impl TransactionInput {
-    pub fn new(date: NaiveDate) -> Self {
-        Self{selector: TISelector::new(), date: DateInput::new(date), amount: AmountInput::new(), desc: TextInput::new()}
+impl PurchaseInput {
+    pub fn new(date: NaiveDate, tags_completor: Completor) -> Self {
+        Self{
+            focus: PurchaseInputFocus::new(),
+            date: DateInput::new(date),
+            amount: AmountInput::new(),
+            desc: TextInput::new(),
+            tag: CompletorInput::new('<', '>', true, tags_completor)
+        }
     }
 
     pub fn input(&mut self, event: InputEvent) {
         use InputEvent::*;
         match event {
-            Tab => self.selector.next(),
-            BackTab => self.selector.prev(),
+            Tab => self.focus.next(),
+            BackTab => self.focus.prev(),
             _ => {
-                use TISelector::*;
-                let next = match self.selector {
+                use PurchaseInputFocus::*;
+                let action = match self.focus {
                     Date => self.date.input(event),
                     Amount => self.amount.input(event),
                     Desc => self.desc.input(event),
+                    Tag => self.tag.input(event),
                 };
 
-                if next {
-                    self.selector.next();
+                match action {
+                    Action::Nothing => (),
+                    Action::Next => self.focus.next(),
+                    Action::Prev => self.focus.prev(),
                 }
             }
         }
@@ -244,12 +355,13 @@ impl TransactionInput {
             }
         }
 
-        queue!(stdout(), cursor::MoveTo(0, line))?;
-        queue!(stdout(), PrintStyledContent(apply_style(self.date.to_string(), self.selector == TISelector::Date)))?;
+        queue!(stdout(), cursor::MoveTo(0, line), cursor::Hide)?;
+        queue!(stdout(), PrintStyledContent(apply_style(self.date.to_string(), self.focus == PurchaseInputFocus::Date)))?;
         queue!(stdout(), Print("   "))?;
-        queue!(stdout(), PrintStyledContent(apply_style(self.amount.to_string(), self.selector == TISelector::Amount)))?;
+        queue!(stdout(), PrintStyledContent(apply_style(self.amount.to_string(), self.focus == PurchaseInputFocus::Amount)))?;
         queue!(stdout(), Print("   "))?;
-        queue!(stdout(), PrintStyledContent(apply_style(self.desc.to_string(), self.selector == TISelector::Desc)))?;
+        queue!(stdout(), PrintStyledContent(apply_style(self.desc.to_string(), self.focus == PurchaseInputFocus::Desc)))?;
+        self.tag.display(line+1, self.focus == PurchaseInputFocus::Tag);
 
         Ok(())
     }
@@ -266,6 +378,7 @@ fn get_event() -> crossterm::Result<InputEvent> {
                 KeyModifiers::NONE => {
                     match key_event.code {
                         KeyCode::Esc => return Ok(InputEvent::Esc),
+                        KeyCode::Enter => return Ok(InputEvent::Enter),
                         KeyCode::Up => return Ok(InputEvent::Up),
                         KeyCode::Down => return Ok(InputEvent::Down),
                         KeyCode::Left => return Ok(InputEvent::Left),
@@ -294,7 +407,13 @@ fn get_event() -> crossterm::Result<InputEvent> {
 pub fn app() -> crossterm::Result<()> {
     let today: NaiveDate = Local::now().date_naive();
 
-    let mut transaction = TransactionInput::new(today);
+    use crate::tags;
+    use crate::yamlrw::YamlRW;
+    let mut tags = tags::Tags::read_yaml("tags.yaml").unwrap();
+    tags.fix();
+    let tags_completor = Completor::new(tags.0.into_keys().collect());
+
+    let mut transaction = PurchaseInput::new(today, tags_completor);
 
     use crossterm::{
         terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear, ClearType},

@@ -6,11 +6,9 @@ use crate::yamlrw::YamlRW;
 pub type AccountRef = String;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Account {
-    name: AccountRef,
-}
+pub struct AccountData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Accounts(HashMap<AccountRef, Account>);
+pub struct Accounts(HashMap<AccountRef, AccountData>);
 
 impl YamlRW for Accounts {}
