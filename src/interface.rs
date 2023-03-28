@@ -130,9 +130,44 @@ impl fmt::Display for AmountInput {
     }
 }
 
+struct TextInput {
+    text: String,
+}
+
+impl TextInput {
+    pub fn new() -> Self {
+        Self{text: String::new()}
+    }
+
+    /// Return true if finised
+    pub fn input(&mut self, event: InputEvent) -> bool {
+        use InputEvent::*;
+
+        match event {
+            Backspace => {
+                let _ = self.text.pop();
+            },
+            Char(c) => {
+                self.text.push(c);
+            },
+            _ => (),
+        }
+
+        false
+    }
+}
+
+impl fmt::Display for TextInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.text)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum TISelector {
     Date,
     Amount,
+    Desc,
 }
 
 impl TISelector {
@@ -144,7 +179,8 @@ impl TISelector {
         use TISelector::*;
         *self = match self {
             Date => Amount,
-            Amount => Date,
+            Amount => Desc,
+            Desc => Date,
         }
     }
 }
@@ -153,11 +189,12 @@ struct TransactionInput {
     selector: TISelector,
     date: DateInput,
     amount: AmountInput,
+    desc: TextInput,
 }
 
 impl TransactionInput {
     pub fn new(date: NaiveDate) -> Self {
-        Self{selector: TISelector::new(), date: DateInput::new(date), amount: AmountInput::new()}
+        Self{selector: TISelector::new(), date: DateInput::new(date), amount: AmountInput::new(), desc: TextInput::new()}
     }
 
     pub fn input(&mut self, event: InputEvent) {
@@ -169,6 +206,7 @@ impl TransactionInput {
                 let next = match self.selector {
                     Date => self.date.input(event),
                     Amount => self.amount.input(event),
+                    Desc => self.desc.input(event),
                 };
 
                 if next {
@@ -182,15 +220,25 @@ impl TransactionInput {
         use crossterm::{
             queue,
             cursor,
-            style::{Print, PrintStyledContent, Stylize}
+            style::{Print, PrintStyledContent, StyledContent}
         };
 
+        fn apply_style(text: String, selected: bool) -> StyledContent<String> {
+            use crossterm::style::Stylize;
+
+            if selected {
+                text.bold().reverse()
+            } else {
+                text.bold()
+            }
+        }
+
         queue!(stdout(), cursor::MoveTo(0, line))?;
-        let tmp = self.date.to_string().bold();
-        queue!(stdout(), PrintStyledContent(match self.selector { TISelector::Date => tmp.reverse(), _ => tmp, }))?;
+        queue!(stdout(), PrintStyledContent(apply_style(self.date.to_string(), self.selector == TISelector::Date)))?;
         queue!(stdout(), Print("   "))?;
-        let tmp = self.amount.to_string().bold();
-        queue!(stdout(), PrintStyledContent(match self.selector { TISelector::Amount => tmp.reverse(), _ => tmp, }))?;
+        queue!(stdout(), PrintStyledContent(apply_style(self.amount.to_string(), self.selector == TISelector::Amount)))?;
+        queue!(stdout(), Print("   "))?;
+        queue!(stdout(), PrintStyledContent(apply_style(self.desc.to_string(), self.selector == TISelector::Desc)))?;
 
         Ok(())
     }
@@ -234,7 +282,7 @@ pub fn app() -> crossterm::Result<()> {
         execute,
         queue,
         cursor,
-        style::{Print, PrintStyledContent, Stylize}
+        style::{Print}
     };
 
     enable_raw_mode()?;
