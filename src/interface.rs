@@ -10,6 +10,7 @@ enum InputEvent {
     Esc,
     Backspace,
     Tab,
+    BackTab,
     Char(char),
 }
 
@@ -183,6 +184,15 @@ impl TISelector {
             Desc => Date,
         }
     }
+
+    pub fn prev(&mut self) {
+        use TISelector::*;
+        *self = match self {
+            Date => Desc,
+            Amount => Date,
+            Desc => Amount,
+        }
+    }
 }
 
 struct TransactionInput {
@@ -201,6 +211,7 @@ impl TransactionInput {
         use InputEvent::*;
         match event {
             Tab => self.selector.next(),
+            BackTab => self.selector.prev(),
             _ => {
                 use TISelector::*;
                 let next = match self.selector {
@@ -245,27 +256,35 @@ impl TransactionInput {
 }
 
 fn get_event() -> crossterm::Result<InputEvent> {
-    use crossterm::event::{read, Event, KeyCode};
+    use crossterm::event::{read, Event, KeyCode, KeyModifiers};
 
     loop {
         let event = read()?;
 
         if let Event::Key(key_event) = event {
-            if key_event == KeyCode::Esc.into() {
-                return Ok(InputEvent::Esc);
-            } else if key_event == KeyCode::Up.into() {
-                return Ok(InputEvent::Up);
-            } else if key_event == KeyCode::Down.into() {
-                return Ok(InputEvent::Down);
-            } else if key_event == KeyCode::Left.into() {
-                return Ok(InputEvent::Left);
-            } else if key_event == KeyCode::Right.into() {
-                return Ok(InputEvent::Right);
-            } else if key_event == KeyCode::Backspace.into() {
-                return Ok(InputEvent::Backspace);
-            } else if key_event == KeyCode::Tab.into() {
-                return Ok(InputEvent::Tab);
-            } else if let KeyCode::Char(c) = key_event.code {
+            match key_event.modifiers {
+                KeyModifiers::NONE => {
+                    match key_event.code {
+                        KeyCode::Esc => return Ok(InputEvent::Esc),
+                        KeyCode::Up => return Ok(InputEvent::Up),
+                        KeyCode::Down => return Ok(InputEvent::Down),
+                        KeyCode::Left => return Ok(InputEvent::Left),
+                        KeyCode::Right => return Ok(InputEvent::Right),
+                        KeyCode::Backspace => return Ok(InputEvent::Backspace),
+                        KeyCode::Tab => return Ok(InputEvent::Tab),
+                        _ => ()
+                    }
+                },
+                KeyModifiers::SHIFT => {
+                    match key_event.code {
+                        KeyCode::BackTab => return Ok(InputEvent::BackTab),
+                        _ => ()
+                    }
+                },
+                _ => (),
+            }
+
+            if let KeyCode::Char(c) = key_event.code {
                 return Ok(InputEvent::Char(c));
             }
         }
