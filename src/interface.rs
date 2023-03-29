@@ -189,14 +189,14 @@ impl CompletorInput {
 
         match event {
             Backspace => {
-                self.selection = None;
                 let _ = self.text.pop();
                 self.compl.update(&self.text);
+                self.selection = None;
             },
             Char(c) => {
-                self.selection = None;
                 self.text.push(c);
                 self.compl.update(&self.text);
+                self.selection = None;
                 if self.strict && self.compl.matches().is_empty() {
                     let _ = self.text.pop();
                     self.compl.update(&self.text);
@@ -217,10 +217,12 @@ impl CompletorInput {
                 if self.strict {
                     self.text = self.compl.matches()[self.selection.unwrap_or(0)].clone();
                     self.compl.update(&self.text);
+                    self.selection = None;
                 } else {
                     if let Some(n) = self.selection {
                         self.text = self.compl.matches()[n].clone();
                         self.compl.update(&self.text);
+                        self.selection = None;
                     }
                 }
                 return Action::Next;
