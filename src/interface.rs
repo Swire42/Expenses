@@ -318,25 +318,19 @@ impl PurchaseInput {
     }
 
     pub fn input(&mut self, event: InputEvent) {
-        use InputEvent::*;
-        match event {
-            Tab => self.focus.next(),
-            BackTab => self.focus.prev(),
-            _ => {
-                use PurchaseInputFocus::*;
-                let action = match self.focus {
-                    Date => self.date.input(event),
-                    Amount => self.amount.input(event),
-                    Desc => self.desc.input(event),
-                    Tag => self.tag.input(event),
-                };
+        use PurchaseInputFocus::*;
 
-                match action {
-                    Action::Nothing => (),
-                    Action::Next => self.focus.next(),
-                    Action::Prev => self.focus.prev(),
-                }
-            }
+        let action = match self.focus {
+            Date => self.date.input(event),
+            Amount => self.amount.input(event),
+            Desc => self.desc.input(event),
+            Tag => self.tag.input(event),
+        };
+
+        match action {
+            Action::Nothing => (),
+            Action::Next => self.focus.next(),
+            Action::Prev => self.focus.prev(),
         }
     }
 
