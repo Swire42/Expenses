@@ -32,7 +32,7 @@ impl DateInput {
         Self{date}
     }
 
-    pub fn input(&mut self, event: InputEvent) -> Action {
+    fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
         match event {
             Tab | Enter => return Action::Next,
@@ -46,10 +46,9 @@ impl DateInput {
 
     pub fn display(&self, line: u16, active: bool) -> crossterm::Result<()> {
         use crossterm::{
-            terminal,
             queue,
             cursor,
-            style::{Print, PrintStyledContent, StyledContent, Stylize}
+            style::{PrintStyledContent, Stylize}
         };
 
         let mut tmp = self.date.format("%d-%m-%Y").to_string().bold();
@@ -81,7 +80,7 @@ impl AmountInput {
         }
     }
 
-    pub fn input(&mut self, event: InputEvent) -> Action {
+    fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
 
         match event {
@@ -146,10 +145,9 @@ impl AmountInput {
 
     pub fn display(&self, line: u16, active: bool) -> crossterm::Result<()> {
         use crossterm::{
-            terminal,
             queue,
             cursor,
-            style::{Print, PrintStyledContent, StyledContent, Stylize}
+            style::{PrintStyledContent, Stylize}
         };
 
         let mut tmp = format!("{self}").bold();
@@ -173,40 +171,6 @@ impl fmt::Display for AmountInput {
             _ => unreachable!(),
         }
         write!(f, " €")
-    }
-}
-
-struct TextInput {
-    text: String,
-}
-
-impl TextInput {
-    pub fn new() -> Self {
-        Self{text: String::new()}
-    }
-
-    pub fn input(&mut self, event: InputEvent) -> Action {
-        use InputEvent::*;
-
-        match event {
-            Tab | Enter => return Action::Next,
-            BackTab => return Action::Prev,
-            Backspace => {
-                let _ = self.text.pop();
-            },
-            Char(c) => {
-                self.text.push(c);
-            },
-            _ => (),
-        }
-
-        Action::Nothing
-    }
-}
-
-impl fmt::Display for TextInput {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\"{}\"", self.text)
     }
 }
 
@@ -238,7 +202,7 @@ impl CompletorInput {
         }
     }
 
-    pub fn input(&mut self, event: InputEvent) -> Action {
+    fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
 
         match event {
@@ -286,7 +250,7 @@ impl CompletorInput {
             terminal,
             queue,
             cursor,
-            style::{Print, PrintStyledContent, StyledContent, Stylize}
+            style::{PrintStyledContent, Stylize}
         };
 
         let mut tmp = format!("{}{}{}", self.decor_prefix, self.text, self.decor_suffix).bold();
@@ -296,7 +260,7 @@ impl CompletorInput {
         queue!(stdout(), cursor::MoveTo(0, line), PrintStyledContent(tmp))?;
 
         if active {
-            let (cols, rows) = terminal::size()?;
+            let (_cols, rows) = terminal::size()?;
             for (lig, (n, sugg)) in ((line+1)..rows).zip(self.compl.matches().iter().enumerate()) {
                 let tmp = if Some(n) == self.selection {
                     format!(">{}<", sugg).bold().reverse()
@@ -370,7 +334,7 @@ impl PurchaseInput {
         }
     }
 
-    pub fn input(&mut self, event: InputEvent) {
+    fn input(&mut self, event: InputEvent) {
         use PurchaseInputFocus::*;
 
         let action = match self.focus {
@@ -388,22 +352,6 @@ impl PurchaseInput {
     }
 
     pub fn display(&mut self, line: u16) -> crossterm::Result<()> {
-        use crossterm::{
-            queue,
-            cursor,
-            style::{Print, PrintStyledContent, StyledContent}
-        };
-
-        fn apply_style(text: String, selected: bool) -> StyledContent<String> {
-            use crossterm::style::Stylize;
-
-            if selected {
-                text.bold().reverse()
-            } else {
-                text.bold()
-            }
-        }
-
         use PurchaseInputFocus::*;
         let focus = self.focus;
 
