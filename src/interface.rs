@@ -35,11 +35,30 @@ impl DateInput {
     pub fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
         match event {
-            Up => self.date = self.date.succ_opt().unwrap(),
-            Down => self.date = self.date.pred_opt().unwrap(),
+            Tab | Enter => return Action::Next,
+            BackTab => return Action::Prev,
+            Down => self.date = self.date.succ_opt().unwrap(),
+            Up => self.date = self.date.pred_opt().unwrap(),
             _ => (),
         }
         Action::Nothing
+    }
+
+    pub fn display(&self, line: u16, active: bool) -> crossterm::Result<()> {
+        use crossterm::{
+            terminal,
+            queue,
+            cursor,
+            style::{Print, PrintStyledContent, StyledContent, Stylize}
+        };
+
+        let mut tmp = self.date.format("%d-%m-%Y").to_string().bold();
+        if active {
+            tmp = tmp.reverse();
+        }
+        queue!(stdout(), cursor::MoveTo(0, line), PrintStyledContent(tmp))?;
+
+        Ok(())
     }
 }
 
@@ -66,6 +85,8 @@ impl AmountInput {
         use InputEvent::*;
 
         match event {
+            Tab | Enter => return Action::Next,
+            BackTab => return Action::Prev,
             Backspace => {
                 match self.separator_dist {
                     None => {
@@ -122,6 +143,23 @@ impl AmountInput {
             _ => Action::Nothing,
         }
     }
+
+    pub fn display(&self, line: u16, active: bool) -> crossterm::Result<()> {
+        use crossterm::{
+            terminal,
+            queue,
+            cursor,
+            style::{Print, PrintStyledContent, StyledContent, Stylize}
+        };
+
+        let mut tmp = format!("{self}").bold();
+        if active {
+            tmp = tmp.reverse();
+        }
+        queue!(stdout(), cursor::MoveTo(0, line), PrintStyledContent(tmp))?;
+
+        Ok(())
+    }
 }
 
 impl fmt::Display for AmountInput {
@@ -151,6 +189,8 @@ impl TextInput {
         use InputEvent::*;
 
         match event {
+            Tab | Enter => return Action::Next,
+            BackTab => return Action::Prev,
             Backspace => {
                 let _ = self.text.pop();
             },
@@ -184,6 +224,20 @@ impl CompletorInput {
         Self{text: String::new(), decor_prefix, decor_suffix, strict, compl, selection: None}
     }
 
+    fn exit(&mut self) {
+        if self.strict {
+            self.text = self.compl.matches()[self.selection.unwrap_or(0)].clone();
+            self.compl.update(&self.text);
+            self.selection = None;
+        } else {
+            if let Some(n) = self.selection {
+                self.text = self.compl.matches()[n].clone();
+                self.compl.update(&self.text);
+                self.selection = None;
+            }
+        }
+    }
+
     pub fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
 
@@ -213,20 +267,14 @@ impl CompletorInput {
                     Some(x) => Some(x-1),
                 }
             },
-            Enter => {
-                if self.strict {
-                    self.text = self.compl.matches()[self.selection.unwrap_or(0)].clone();
-                    self.compl.update(&self.text);
-                    self.selection = None;
-                } else {
-                    if let Some(n) = self.selection {
-                        self.text = self.compl.matches()[n].clone();
-                        self.compl.update(&self.text);
-                        self.selection = None;
-                    }
-                }
+            Tab | Enter => {
+                self.exit();
                 return Action::Next;
-            }
+            },
+            BackTab => {
+                self.exit();
+                return Action::Prev;
+            },
             _ => (),
         }
 
@@ -251,13 +299,18 @@ impl CompletorInput {
             let (cols, rows) = terminal::size()?;
             for (lig, (n, sugg)) in ((line+1)..rows).zip(self.compl.matches().iter().enumerate()) {
                 let tmp = if Some(n) == self.selection {
-                    format!(">{}", sugg).bold().reverse()
+                    format!(">{}<", sugg).bold().reverse()
                 } else {
-                    format!(" {}", sugg).bold()
+                    format!(" {} ", sugg).bold()
                 };
                 queue!(stdout(), cursor::MoveTo(0, lig), PrintStyledContent(tmp))?;
             }
-            queue!(stdout(), cursor::MoveTo(1+self.text.len() as u16, line), cursor::Show, cursor::SetCursorStyle::BlinkingBar)?;
+            queue!(stdout(), cursor::MoveTo(1+self.text.chars().count() as u16, line), cursor::Show)?;
+            if self.selection.is_none() {
+                queue!(stdout(), cursor::SetCursorStyle::BlinkingBar)?;
+            } else {
+                queue!(stdout(), cursor::SetCursorStyle::SteadyBar)?;
+            }
         }
 
         Ok(())
@@ -302,18 +355,18 @@ struct PurchaseInput {
     focus: PurchaseInputFocus,
     date: DateInput,
     amount: AmountInput,
-    desc: TextInput,
+    desc: CompletorInput,
     tag: CompletorInput,
 }
 
 impl PurchaseInput {
-    pub fn new(date: NaiveDate, tags_completor: Completor) -> Self {
+    pub fn new(date: NaiveDate, desc_completor: Completor, tags_completor: Completor) -> Self {
         Self{
             focus: PurchaseInputFocus::new(),
             date: DateInput::new(date),
             amount: AmountInput::new(),
-            desc: TextInput::new(),
-            tag: CompletorInput::new('<', '>', true, tags_completor)
+            desc: CompletorInput::new('"', '"', false, desc_completor),
+            tag: CompletorInput::new('<', '>', true, tags_completor),
         }
     }
 
@@ -351,13 +404,18 @@ impl PurchaseInput {
             }
         }
 
-        queue!(stdout(), cursor::MoveTo(0, line), cursor::Hide)?;
-        queue!(stdout(), PrintStyledContent(apply_style(self.date.to_string(), self.focus == PurchaseInputFocus::Date)))?;
-        queue!(stdout(), Print("   "))?;
-        queue!(stdout(), PrintStyledContent(apply_style(self.amount.to_string(), self.focus == PurchaseInputFocus::Amount)))?;
-        queue!(stdout(), Print("   "))?;
-        queue!(stdout(), PrintStyledContent(apply_style(self.desc.to_string(), self.focus == PurchaseInputFocus::Desc)))?;
-        self.tag.display(line+1, self.focus == PurchaseInputFocus::Tag);
+        use PurchaseInputFocus::*;
+        let focus = self.focus;
+
+        if focus != Date {self.date.display(line, false)?}
+        if focus != Amount {self.amount.display(line+1, false)?}
+        if focus != Desc {self.desc.display(line+2, false)?}
+        if focus != Tag {self.tag.display(line+3, false)?}
+
+        if focus == Date {self.date.display(line, true)?}
+        if focus == Amount {self.amount.display(line+1, true)?}
+        if focus == Desc {self.desc.display(line+2, true)?}
+        if focus == Tag {self.tag.display(line+3, true)?}
 
         Ok(())
     }
@@ -407,9 +465,10 @@ pub fn app() -> crossterm::Result<()> {
     use crate::yamlrw::YamlRW;
     let mut tags = tags::Tags::read_yaml("tags.yaml").unwrap();
     tags.fix();
+    let desc_completor = Completor::new(Vec::new());
     let tags_completor = Completor::new(tags.0.into_keys().collect());
 
-    let mut transaction = PurchaseInput::new(today, tags_completor);
+    let mut transaction = PurchaseInput::new(today, desc_completor, tags_completor);
 
     use crossterm::{
         terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear, ClearType},
@@ -423,7 +482,7 @@ pub fn app() -> crossterm::Result<()> {
     execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
 
     loop {
-        queue!(stdout(), Clear(ClearType::All))?;
+        queue!(stdout(), Clear(ClearType::All), cursor::Hide)?;
         queue!(stdout(), cursor::MoveTo(0, 0), Print("Press ESC to quit."))?;
         transaction.display(2)?;
 
