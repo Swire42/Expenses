@@ -9,6 +9,6 @@ pub type AccountRef = String;
 pub struct AccountData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Accounts(HashMap<AccountRef, AccountData>);
+pub struct Accounts(pub HashMap<AccountRef, AccountData>);
 
 impl YamlRW for Accounts {}

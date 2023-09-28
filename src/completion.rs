@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct Completor {
     dict: Vec<String>,
     matches: Vec<String>,
