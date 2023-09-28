@@ -2,7 +2,9 @@ use std::io::{stdout, Write};
 use std::fmt;
 use chrono::{Local, NaiveDate};
 
+use crate::money::Amount;
 use crate::completion::Completor;
+use crate::transaction::{Transactions, Transaction, Purchase, Consumers};
 
 enum InputEvent {
     Up,
@@ -68,6 +70,12 @@ impl fmt::Display for DateInput {
     }
 }
 
+impl From<DateInput> for NaiveDate {
+    fn from(date: DateInput) -> NaiveDate {
+        date.date
+    }
+}
+
 struct AmountInput {
     cents: usize,
     separator_dist: Option<usize>,
@@ -81,7 +89,11 @@ impl AmountInput {
         }
     }
 
-    fn input(&mut self, event: InputEvent) -> Action {
+    pub fn valid(&self) -> bool {
+        self.cents != 0
+    }
+
+    pub fn input(&mut self, event: InputEvent) -> Action {
         use InputEvent::*;
 
         match event {
@@ -178,6 +190,12 @@ impl fmt::Display for AmountInput {
     }
 }
 
+impl From<AmountInput> for Amount {
+    fn from(amount: AmountInput) -> Amount {
+        Amount{cents: amount.cents}
+    }
+}
+
 pub struct CompletorInput {
     text: String,
     decor_prefix: char,
@@ -194,6 +212,10 @@ impl CompletorInput {
 
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
+    }
+
+    pub fn valid(&self) -> bool {
+        !self.is_empty() && (!self.strict || self.compl.contains(&self.text))
     }
 
     pub fn display_len(&self) -> usize {
@@ -303,6 +325,12 @@ impl CompletorInput {
     }
 }
 
+impl From<CompletorInput> for String {
+    fn from(input: CompletorInput) -> String {
+        input.text
+    }
+}
+
 struct UsersInput {
     new_user: CompletorInput,
     users: Vec<String>,
@@ -312,6 +340,10 @@ struct UsersInput {
 impl UsersInput {
     pub fn new(compl: Completor) -> Self {
         Self{new_user: CompletorInput::new('[', ']', true, compl), users: Vec::new(), selection: None}
+    }
+
+    pub fn valid(&self) -> bool {
+        !self.users.is_empty()
     }
 
     pub fn add_user(&mut self, user: String) {
@@ -388,7 +420,7 @@ impl UsersInput {
                             action => action,
                         };
                     },
-                    Some(x) => {
+                    Some(_) => {
                         match event {
                             Backspace | Delete => {
                                 self.del_user();
@@ -413,7 +445,6 @@ impl UsersInput {
 
     pub fn display(&self, line: u16, active: bool) -> crossterm::Result<()> {
         use crossterm::{
-            terminal,
             queue,
             cursor,
             style::{Print, PrintStyledContent, Stylize}
@@ -423,7 +454,7 @@ impl UsersInput {
             self.new_user.display(line, false)?;
         }
 
-        queue!(stdout(), cursor::MoveTo(self.new_user.display_len().try_into().unwrap(), line));
+        queue!(stdout(), cursor::MoveTo(self.new_user.display_len().try_into().unwrap(), line))?;
 
         for (n, user) in self.users.iter().enumerate() {
             let mut tmp: crossterm::style::StyledContent<String> = format!("{}", user).bold();
@@ -441,6 +472,12 @@ impl UsersInput {
     }
 }
 
+impl From<UsersInput> for Consumers {
+    fn from(users: UsersInput) -> Consumers {
+        Consumers(users.users.into_iter().map(|user| (user, 1)).collect())
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum PurchaseInputFocus {
     Date,
@@ -448,7 +485,7 @@ enum PurchaseInputFocus {
     Desc,
     Tag,
     Buyer,
-    Users,
+    Consumers,
 }
 
 impl PurchaseInputFocus {
@@ -462,22 +499,27 @@ impl PurchaseInputFocus {
             Date => Amount,
             Amount => Desc,
             Desc => Tag,
-            Tag =>Buyer,
-            Buyer => Users,
-            Users => Date,
+            Tag => Buyer,
+            Buyer => Consumers,
+            Consumers => Date,
         }
     }
 
     pub fn prev(&mut self) {
         use PurchaseInputFocus::*;
         *self = match self {
-            Date => Users,
+            Date => Consumers,
             Amount => Date,
             Desc => Amount,
             Tag => Desc,
             Buyer => Tag,
-            Users => Buyer,
+            Consumers => Buyer,
         }
+    }
+
+    pub fn last(&self) -> bool {
+        use PurchaseInputFocus::*;
+        self == &Consumers
     }
 }
 
@@ -488,7 +530,7 @@ struct PurchaseInput {
     desc: CompletorInput,
     tag: CompletorInput,
     buyer: CompletorInput,
-    users: UsersInput,
+    consumers: UsersInput,
 }
 
 impl PurchaseInput {
@@ -500,11 +542,15 @@ impl PurchaseInput {
             desc: CompletorInput::new('"', '"', false, desc_completor),
             tag: CompletorInput::new('<', '>', true, tag_completor),
             buyer: CompletorInput::new('[', ']', true, account_completor.clone()),
-            users: UsersInput::new(account_completor),
+            consumers: UsersInput::new(account_completor),
         }
     }
 
-    fn input(&mut self, event: InputEvent) {
+    pub fn valid(&self) -> bool {
+        self.amount.valid() && self.desc.valid() && self.tag.valid() && self.buyer.valid() && self.consumers.valid()
+    }
+
+    pub fn input(&mut self, event: InputEvent) -> Action {
         use PurchaseInputFocus::*;
 
         let action = match self.focus {
@@ -513,14 +559,21 @@ impl PurchaseInput {
             Desc => self.desc.input(event),
             Tag => self.tag.input(event),
             Buyer => self.buyer.input(event),
-            Users => self.users.input(event),
+            Consumers => self.consumers.input(event),
         };
 
         match action {
             Action::Nothing => (),
-            Action::Next => self.focus.next(),
             Action::Prev => self.focus.prev(),
+            Action::Next => {
+                if self.focus.last() && self.valid() {
+                    return Action::Next;
+                }
+                self.focus.next();
+            },
         }
+
+        Action::Nothing
     }
 
     pub fn display(&mut self, line: u16) -> crossterm::Result<()> {
@@ -532,16 +585,29 @@ impl PurchaseInput {
         if focus != Desc {self.desc.display(line+2, false)?}
         if focus != Tag {self.tag.display(line+3, false)?}
         if focus != Buyer {self.buyer.display(line+4, false)?}
-        if focus != Users {self.users.display(line+5, false)?}
+        if focus != Consumers {self.consumers.display(line+5, false)?}
 
         if focus == Date {self.date.display(line, true)?}
         if focus == Amount {self.amount.display(line+1, true)?}
         if focus == Desc {self.desc.display(line+2, true)?}
         if focus == Tag {self.tag.display(line+3, true)?}
         if focus == Buyer {self.buyer.display(line+4, true)?}
-        if focus == Users {self.users.display(line+5, true)?}
+        if focus == Consumers {self.consumers.display(line+5, true)?}
 
         Ok(())
+    }
+}
+
+impl From<PurchaseInput> for Purchase {
+    fn from(purchase: PurchaseInput) -> Purchase {
+        Purchase {
+            date: purchase.date.into(),
+            amount: purchase.amount.into(),
+            desc: purchase.desc.into(),
+            tag: purchase.tag.into(),
+            buyer: purchase.buyer.into(),
+            consumers: purchase.consumers.into(),
+        }
     }
 }
 
@@ -595,12 +661,12 @@ pub fn app() -> crossterm::Result<()> {
 
     let accounts = accounts::Accounts::read_yaml("accounts.yaml").unwrap();
 
+    let mut transactions = Transactions::read_yaml("data.yaml").unwrap_or_else(|_| Transactions::new());
+
     let desc_completor = Completor::new(Vec::new());
     let tag_completor = Completor::new(tags.0.into_keys().collect());
     let account_completor = Completor::new(accounts.0.into_keys().collect());
 
-
-    let mut transaction = PurchaseInput::new(today, desc_completor, tag_completor, account_completor);
 
     use crossterm::{
         terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear, ClearType},
@@ -613,25 +679,37 @@ pub fn app() -> crossterm::Result<()> {
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
 
-    loop {
-        queue!(stdout(), Clear(ClearType::All), cursor::Hide)?;
-        queue!(stdout(), cursor::MoveTo(0, 0), Print("Press ESC to quit."))?;
-        transaction.display(2)?;
+    'outer: loop {
+        let mut purchase = PurchaseInput::new(today, desc_completor.clone(), tag_completor.clone(), account_completor.clone());
 
-        stdout().flush()?;
+        loop {
+            queue!(stdout(), Clear(ClearType::All), cursor::Hide)?;
+            queue!(stdout(), cursor::MoveTo(0, 0), Print("Press ESC to quit."))?;
+            purchase.display(2)?;
 
-        use InputEvent::*;
+            stdout().flush()?;
 
-        match get_event()? {
-            Esc => break,
-            e => {
-                transaction.input(e);
-            },
+            use InputEvent::*;
+
+            match get_event()? {
+                Esc => break 'outer,
+                e => {
+                    match purchase.input(e) {
+                        Action::Nothing => (),
+                        Action::Next => break,
+                        Action::Prev => unreachable!(),
+                    }
+                },
+            }
         }
+
+        transactions.add(Transaction::Purchase(purchase.into()));
     }
 
     disable_raw_mode()?;
     execute!(stdout(), cursor::Show, LeaveAlternateScreen)?;
+
+    transactions.write_yaml("data.yaml").unwrap();
 
     Ok(())
 }

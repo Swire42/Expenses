@@ -1,1 +1,6 @@
-pub type Amount = f64;
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Amount {
+    pub cents: usize,
+}

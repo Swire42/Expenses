@@ -18,4 +18,8 @@ impl Completor {
     pub fn matches(&self) -> &Vec<String> {
         &self.matches
     }
+
+    pub fn contains(&self, text: &String) -> bool {
+        self.dict.contains(text)
+    }
 }
