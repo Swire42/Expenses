@@ -1,3 +1,4 @@
+mod term;
 mod interface;
 mod tags;
 mod accounts;
@@ -7,9 +8,11 @@ mod yamlrw;
 mod completion;
 
 use std::error::Error;
+use crate::term::TermElement;
 
 fn app() -> Result<(), Box<dyn Error>> {
-    interface::app().unwrap();
+    let mut app = interface::App::new();
+    app.run()?;
     Ok(())
 }
 
