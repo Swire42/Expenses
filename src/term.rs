@@ -39,6 +39,14 @@ impl TermBox {
     pub fn begin(&self) -> TermPos {
         TermPos::new(self.left, self.top)
     }
+
+    pub fn width(&self) -> usize {
+        self.right - self.left
+    }
+
+    pub fn height(&self) -> usize {
+        self.bottom - self.top
+    }
 }
 
 pub enum InputEvent {

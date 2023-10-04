@@ -1,6 +1,8 @@
 use std::io::{stdout};
 use std::fmt;
 use chrono::{Local, NaiveDate};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use crate::term::*;
 use crate::money::Amount;
@@ -49,7 +51,6 @@ impl TermElement for DateInput {
     fn input(&mut self, event: InputEvent) -> Option<InputEvent> {
         use InputEvent::*;
         match event {
-            Tab | Enter | BackTab => Some(event),
             Down | Right => {
                 self.date = self.date.succ_opt().unwrap();
                 None
@@ -58,7 +59,7 @@ impl TermElement for DateInput {
                 self.date = self.date.pred_opt().unwrap();
                 None
             },
-            _ => None,
+            _ => Some(event),
         }
     }
 }
@@ -132,7 +133,6 @@ impl TermElement for AmountInput {
         use InputEvent::*;
 
         match event {
-            Tab | Enter | BackTab => Some(event),
             Backspace => {
                 match self.separator_dist {
                     None => {
@@ -186,7 +186,7 @@ impl TermElement for AmountInput {
                     None
                 }
             },
-            _ => None,
+            _ => Some(event),
         }
     }
 }
@@ -319,6 +319,7 @@ impl TermElement for CompletorInput {
                 let _ = self.text.pop();
                 self.compl.update(&self.text);
                 self.selection = None;
+                None
             },
             Char(c) => {
                 self.text.push(c);
@@ -328,26 +329,27 @@ impl TermElement for CompletorInput {
                     let _ = self.text.pop();
                     self.compl.update(&self.text);
                 }
+                None
             },
             Down => {
                 if !self.compl.matches().is_empty() {
                     self.selection = Some(self.selection.map_or(0, |x| usize::min(x+1, self.compl.matches().len()-1)));
                 }
+                None
             },
             Up => {
                 self.selection = match self.selection {
                     None | Some(0) => None,
                     Some(x) => Some(x-1),
-                }
+                };
+                None
             },
             Tab | Enter | BackTab=> {
                 self.exit();
-                return Some(event);
+                Some(event)
             },
-            _ => (),
+            _ => Some(event),
         }
-
-        None
     }
 }
 
@@ -465,6 +467,7 @@ impl TermElement for UsersInput {
                     None | Some(0) => None,
                     Some(x) => Some(x-1),
                 };
+                None
             },
             Right => {
                 self.validate_new_user();
@@ -477,11 +480,12 @@ impl TermElement for UsersInput {
                         Some(x) => Some(usize::min(x+1, self.users.len()-1)),
                     }
                 };
+                None
             },
             event => {
                 match &self.selection {
                     None => {
-                        return match self.new_user.input(event) {
+                        match self.new_user.input(event) {
                             Some(event @ (Tab | Enter | BackTab)) => {
                                 if self.new_user.is_empty() {
                                     Some(event)
@@ -491,25 +495,24 @@ impl TermElement for UsersInput {
                                 }
                             },
                             event => event,
-                        };
+                        }
                     },
                     Some(_) => {
                         match event {
                             Backspace | Delete => {
                                 self.del_user();
+                                None
                             },
                             Tab | Enter | BackTab => {
                                 self.exit();
-                                return Some(event);
+                                Some(event)
                             },
-                            _ => (),
+                            _ => Some(event),
                         }
                     },
                 }
             },
         }
-
-        None
     }
 }
 
@@ -563,6 +566,15 @@ impl PurchaseInputFocus {
     pub fn last(&self) -> bool {
         use PurchaseInputFocus::*;
         self == &Consumers
+    }
+
+    pub fn all() -> [Self; 6] {
+        use PurchaseInputFocus::*;
+        [Date, Amount, Desc, Tag, Buyer, Consumers]
+    }
+
+    pub fn count() -> usize {
+        Self::all().len()
     }
 }
 
@@ -625,7 +637,7 @@ impl TermElement for PurchaseInput {
     fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
         use PurchaseInputFocus::*;
 
-        for index in [Date, Amount, Desc, Tag, Buyer, Consumers] {
+        for index in PurchaseInputFocus::all() {
             self.child(index).display(self.child_box(index, element_box), index == self.focus)?;
         }
 
@@ -654,20 +666,21 @@ impl TermElement for PurchaseInput {
 
         use InputEvent::*;
 
-        if let Some(event) = event_opt {
-            match event {
-                Tab | Enter => {
-                    if self.focus.last() && self.valid() {
-                        return Some(event);
-                    }
+        match event_opt {
+            Some(Tab | Enter) => {
+                if self.focus.last() && self.valid() {
+                    event_opt
+                } else {
                     self.focus.next();
-                },
-                BackTab => self.focus.prev(),
-                _ => (),
-            }
+                    None
+                }
+            },
+            Some(BackTab) => {
+                self.focus.prev();
+                None
+            },
+            _ => event_opt,
         }
-
-        None
     }
 }
 
@@ -687,29 +700,122 @@ impl From<PurchaseInput> for Purchase {
 
 
 #[derive(Clone)]
-pub struct App {
+pub struct InteractiveTransactions {
+    transactions: Transactions,
+    selection: usize,
+}
+
+impl InteractiveTransactions {
+    pub fn new(transactions: Transactions) -> Self {
+        Self{transactions, selection: 0}
+    }
+
+    pub fn transactions(&self) -> &Transactions {
+        &self.transactions
+    }
+
+    pub fn add(&mut self, transaction: Transaction) -> usize {
+        let index = self.transactions.add(transaction);
+        self.selection = index;
+        index
+    }
+}
+
+
+
+#[derive(Clone)]
+pub struct TransactionsTE {
+    transactions: Rc<RefCell<InteractiveTransactions>>,
+}
+
+impl TransactionsTE {
+    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>) -> Self {
+        Self{transactions}
+    }
+}
+
+impl TermElement for TransactionsTE {
+    fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
+        use crossterm::{
+            queue,
+            style::{Print, PrintStyledContent, Stylize},
+        };
+
+        let height = element_box.height();
+
+        let center_index = self.transactions.borrow().selection;
+        let mut begin_index = center_index;
+        let mut end_index = center_index;
+
+        while end_index - begin_index < height {
+            let avail_begin = begin_index > 0;
+            let avail_end = end_index < self.transactions.borrow().transactions().len();
+
+            match (avail_begin, avail_end) {
+                (true, true) if center_index - begin_index < end_index - center_index => begin_index -= 1,
+                (true, true) => end_index += 1,
+                (true, false) => begin_index -= 1,
+                (false, true) => end_index += 1,
+                (false, false) => break,
+            }
+        }
+
+        if begin_index == end_index {
+            element_box.begin().goto()?;
+            queue!(stdout(), Print("<empty>"))?;
+        }
+
+        for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
+            TermPos::new(element_box.left, element_box.top+index).goto()?;
+            let mut tmp = "Transaction".to_string().stylize();
+            if begin_index + index == self.transactions.borrow().selection {
+                tmp = tmp.reverse();
+            }
+            queue!(stdout(), PrintStyledContent(tmp))?;
+        }
+
+        Ok(())
+    }
+
+    fn popup(&self, _element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
+        Ok(())
+    }
+
+    fn set_cursor(&self, _element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
+        use crossterm::{queue, cursor};
+        queue!(stdout(), cursor::Hide)
+    }
+
+    fn input(&mut self, event: InputEvent) -> Option<InputEvent> {
+        Some(event)
+    }
+}
+
+
+
+#[derive(Clone)]
+pub struct AppContent {
     tags: Tags,
     accounts: Accounts,
-    transactions: Transactions,
+    transactions: Rc<RefCell<InteractiveTransactions>>,
+    transactions_menu: TransactionsTE,
     purchase: Option<PurchaseInput>,
 }
 
-impl App {
+impl AppContent {
     pub fn new() -> Self {
         use crate::yamlrw::YamlRW;
-
-        let today: NaiveDate = Local::now().date_naive();
 
         let mut tags = Tags::read_yaml("tags.yaml").unwrap();
         tags.fix();
 
         let accounts = Accounts::read_yaml("accounts.yaml").unwrap();
 
-        let transactions = Transactions::read_yaml("data.yaml").unwrap_or_else(|_| Transactions::new());
+        let mut transactions = Transactions::read_yaml("data.yaml").unwrap_or_else(|_| Transactions::new());
+        transactions.fix();
+        let transactions = Rc::new(RefCell::new(InteractiveTransactions::new(transactions)));
 
-        let mut ret = Self{tags, accounts, transactions, purchase: None};
-        ret.new_purchase(today);
-        ret
+        Self{tags, accounts, transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions), purchase: None}
     }
 
     fn new_purchase(&mut self, date: NaiveDate) {
@@ -725,14 +831,14 @@ impl App {
     }
 }
 
-impl Drop for App {
+impl Drop for AppContent {
     fn drop(&mut self) {
         use crate::yamlrw::YamlRW;
-        self.transactions.write_yaml("data.yaml").unwrap();
+        self.transactions.borrow_mut().transactions().write_yaml("data.yaml").unwrap();
     }
 }
 
-impl TermElement for App {
+impl TermElement for AppContent {
     fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
         use crossterm::{
             queue,
@@ -746,7 +852,9 @@ impl TermElement for App {
             Some(purchase) => {
                 purchase.display(self.child_box(element_box), true)?;
             },
-            _ => (),
+            None => {
+                self.transactions_menu.display(self.child_box(element_box), true)?;
+            },
         }
 
         Ok(())
@@ -755,14 +863,14 @@ impl TermElement for App {
     fn popup(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
         match &self.purchase {
             Some(purchase) => purchase.popup(self.child_box(element_box), window_box),
-            _ => Ok(()),
+            None => self.transactions_menu.popup(self.child_box(element_box), window_box),
         }
     }
 
     fn set_cursor(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
         match &self.purchase {
             Some(purchase) => purchase.set_cursor(self.child_box(element_box), window_box),
-            _ => Ok(()),
+            _ => self.transactions_menu.set_cursor(self.child_box(element_box), window_box),
         }
     }
 
@@ -771,27 +879,62 @@ impl TermElement for App {
 
         match &mut self.purchase {
             Some(purchase) => {
-                match event {
-                    Esc => Some(Esc),
-                    _ => {
-                        match purchase.input(event) {
-                            Some(Tab | Enter) => {
-                                let date = purchase.date.date.clone();
-                                self.transactions.add(Transaction::Purchase(purchase.clone().into()));
-                                self.new_purchase(date);
-                            },
-                            _ => (),
-                        }
+                match purchase.input(event) {
+                    Some(Tab | Enter) => {
+                        let date = purchase.date.date.clone();
+                        self.transactions.borrow_mut().add(Transaction::Purchase(purchase.clone().into()));
+                        self.new_purchase(date);
                         None
                     },
+                    Some(Esc) => {
+                        self.purchase = None;
+                        None
+                    },
+                    event_opt => event_opt,
                 }
             },
-            _ => {
-                match event {
-                    Esc => Some(Esc),
-                    _ => None,
+            None => {
+                match self.transactions_menu.input(event) {
+                    Some(Char('i')) => {
+                        self.new_purchase(Local::now().date_naive());
+                        None
+                    },
+                    event_opt => event_opt,
                 }
             },
+        }
+    }
+}
+
+
+
+pub struct App(AppContent);
+
+impl App {
+    pub fn new() -> Self {
+        Self(AppContent::new())
+    }
+}
+
+impl TermElement for App {
+    fn display(&self, element_box: TermBox, active: bool) -> crossterm::Result<()> {
+        self.0.display(element_box, active)
+    }
+
+    fn popup(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+        self.0.popup(element_box, window_box)
+    }
+
+    fn set_cursor(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+        self.0.set_cursor(element_box, window_box)
+    }
+
+    fn input(&mut self, event: InputEvent) -> Option<InputEvent> {
+        use InputEvent::*;
+
+        match self.0.input(event) {
+            Some(Esc) => Some(Esc),
+            _ => None,
         }
     }
 }
