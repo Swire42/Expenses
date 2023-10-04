@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 use crate::tags::TagRef;
 use crate::accounts::AccountRef;
-use crate::money::Amount;
+use crate::money::CentsAmount;
 use crate::yamlrw::YamlRW;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub struct Consumers(pub HashMap<AccountRef, usize>);
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Purchase {
     pub date: NaiveDate,
-    pub amount: Amount,
+    pub amount: CentsAmount,
     pub desc: String,
     pub tag: TagRef,
     pub buyer: AccountRef,
@@ -37,6 +37,12 @@ impl Transaction {
     pub fn date(&self) -> &NaiveDate {
         match &self {
             Transaction::Purchase(purchase) => &purchase.date,
+        }
+    }
+
+    pub fn abs_amount(&self) -> CentsAmount {
+        match &self {
+            Transaction::Purchase(purchase) => purchase.amount,
         }
     }
 

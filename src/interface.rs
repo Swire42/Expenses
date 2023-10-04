@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use crate::term::*;
-use crate::money::Amount;
+use crate::money::CentsAmount;
 use crate::completion::Completor;
 use crate::transaction::{Transactions, Transaction, Purchase, Consumers};
 use crate::tags::Tags;
@@ -205,9 +205,9 @@ impl fmt::Display for AmountInput {
     }
 }
 
-impl From<AmountInput> for Amount {
-    fn from(amount: AmountInput) -> Amount {
-        Amount{cents: amount.cents}
+impl From<AmountInput> for CentsAmount {
+    fn from(amount: AmountInput) -> CentsAmount {
+        CentsAmount::new(amount.cents)
     }
 }
 
@@ -635,8 +635,6 @@ impl PurchaseInput {
 
 impl TermElement for PurchaseInput {
     fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
-        use PurchaseInputFocus::*;
-
         for index in PurchaseInputFocus::all() {
             self.child(index).display(self.child_box(index, element_box), index == self.focus)?;
         }
@@ -767,7 +765,7 @@ impl TermElement for TransactionsTE {
 
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
             TermPos::new(element_box.left, element_box.top+index).goto()?;
-            let mut tmp = "Transaction".to_string().stylize();
+            let mut tmp = transaction.abs_amount().as_string_precision(3, true).stylize();
             if begin_index + index == self.transactions.borrow().selection {
                 tmp = tmp.reverse();
             }
