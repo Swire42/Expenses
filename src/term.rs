@@ -93,10 +93,6 @@ pub fn get_event() -> crossterm::Result<InputEvent> {
     }
 }
 
-pub fn move_cursor(col: usize, row: usize) -> crossterm::cursor::MoveTo {
-    crossterm::cursor::MoveTo(col.try_into().unwrap(), row.try_into().unwrap())
-}
-
 pub trait TermElement {
     fn display(&self, element_box: TermBox, active: bool) -> crossterm::Result<()>;
 

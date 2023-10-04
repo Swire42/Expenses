@@ -1,4 +1,4 @@
-use std::io::{stdout, Write};
+use std::io::{stdout};
 use std::fmt;
 use chrono::{Local, NaiveDate};
 
@@ -37,13 +37,13 @@ impl TermElement for DateInput {
         Ok(())
     }
 
-    fn popup(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+    fn popup(&self, _element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
         Ok(())
     }
 
-    fn set_cursor(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+    fn set_cursor(&self, _element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
         use crossterm::{queue, cursor};
-        queue!(stdout(), crossterm::cursor::Hide)
+        queue!(stdout(), cursor::Hide)
     }
 
     fn input(&mut self, event: InputEvent) -> Option<InputEvent> {
@@ -118,11 +118,11 @@ impl TermElement for AmountInput {
         Ok(())
     }
 
-    fn popup(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+    fn popup(&self, _element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
         Ok(())
     }
 
-    fn set_cursor(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+    fn set_cursor(&self, element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
         use crossterm::{queue, cursor};
         TermPos::new(element_box.left + self.len() - 2, element_box.top).goto()?;
         queue!(stdout(), cursor::Show, cursor::SetCursorStyle::BlinkingBar)
@@ -276,7 +276,7 @@ impl TermElement for CompletorInput {
         if active && self.selection.is_none() {
             tmp = tmp.reverse();
         }
-        element_box.begin().goto();
+        element_box.begin().goto()?;
         queue!(stdout(), PrintStyledContent(tmp))?;
 
         Ok(())
@@ -294,13 +294,13 @@ impl TermElement for CompletorInput {
             } else {
                 format!(" {} ", sugg).bold()
             };
-            TermPos::new(element_box.left, lig).goto();
+            TermPos::new(element_box.left, lig).goto()?;
             queue!(stdout(), PrintStyledContent(tmp))?;
         }
         Ok(())
     }
 
-    fn set_cursor(&self, element_box: TermBox, window_box: TermBox) -> crossterm::Result<()> {
+    fn set_cursor(&self, element_box: TermBox, _window_box: TermBox) -> crossterm::Result<()> {
         use crossterm::{queue, cursor};
         TermPos::new(element_box.left + self.text.chars().count() + 1, element_box.top).goto()?;
         if self.selection.is_none() {
@@ -622,7 +622,7 @@ impl PurchaseInput {
 }
 
 impl TermElement for PurchaseInput {
-    fn display(&self, element_box: TermBox, active: bool) -> crossterm::Result<()> {
+    fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
         use PurchaseInputFocus::*;
 
         for index in [Date, Amount, Desc, Tag, Buyer, Consumers] {
@@ -705,7 +705,7 @@ impl App {
 
         let accounts = Accounts::read_yaml("accounts.yaml").unwrap();
 
-        let mut transactions = Transactions::read_yaml("data.yaml").unwrap_or_else(|_| Transactions::new());
+        let transactions = Transactions::read_yaml("data.yaml").unwrap_or_else(|_| Transactions::new());
 
         let mut ret = Self{tags, accounts, transactions, purchase: None};
         ret.new_purchase(today);
@@ -733,7 +733,7 @@ impl Drop for App {
 }
 
 impl TermElement for App {
-    fn display(&self, element_box: TermBox, active: bool) -> crossterm::Result<()> {
+    fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
         use crossterm::{
             queue,
             style::{Print},
