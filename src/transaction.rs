@@ -1,4 +1,3 @@
-use chrono::{NaiveDate};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use std::cmp::Ordering;
@@ -6,6 +5,7 @@ use std::cmp::Ordering;
 use crate::tags::TagRef;
 use crate::accounts::AccountRef;
 use crate::money::CentsAmount;
+use crate::datetime::Date;
 use crate::yamlrw::YamlRW;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -13,7 +13,7 @@ pub struct Consumers(pub HashMap<AccountRef, usize>);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Purchase {
-    pub date: NaiveDate,
+    pub date: Date,
     pub amount: CentsAmount,
     pub desc: String,
     pub tag: TagRef,
@@ -34,7 +34,7 @@ pub enum Transaction {
 }
 
 impl Transaction {
-    pub fn date(&self) -> &NaiveDate {
+    pub fn date(&self) -> &Date {
         match &self {
             Transaction::Purchase(purchase) => &purchase.date,
         }

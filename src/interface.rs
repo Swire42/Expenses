@@ -1,11 +1,11 @@
 use std::io::{stdout};
 use std::fmt;
-use chrono::{Local, NaiveDate};
 use std::rc::Rc;
 use std::cell::RefCell;
 
 use crate::term::*;
 use crate::money::CentsAmount;
+use crate::datetime::Date;
 use crate::completion::Completor;
 use crate::transaction::{Transactions, Transaction, Purchase, Consumers};
 use crate::tags::Tags;
@@ -13,11 +13,11 @@ use crate::accounts::Accounts;
 
 #[derive(Clone)]
 pub struct DateInput {
-    date: NaiveDate,
+    date: Date,
 }
 
 impl DateInput {
-    pub fn new(date: NaiveDate) -> Self {
+    pub fn new(date: Date) -> Self {
         Self{date}
     }
 }
@@ -29,7 +29,7 @@ impl TermElement for DateInput {
             style::{PrintStyledContent, Stylize}
         };
 
-        let mut tmp = self.date.format("%d-%m-%Y").to_string().bold();
+        let mut tmp = self.date.to_string().bold();
         if active {
             tmp = tmp.reverse();
         }
@@ -52,11 +52,11 @@ impl TermElement for DateInput {
         use InputEvent::*;
         match event {
             Down | Right => {
-                self.date = self.date.succ_opt().unwrap();
+                self.date = self.date.succ();
                 None
             },
             Up | Left => {
-                self.date = self.date.pred_opt().unwrap();
+                self.date = self.date.pred();
                 None
             },
             _ => Some(event),
@@ -66,12 +66,12 @@ impl TermElement for DateInput {
 
 impl fmt::Display for DateInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.date.format("%d-%m-%Y"))
+        write!(f, "{}", self.date.to_string())
     }
 }
 
-impl From<DateInput> for NaiveDate {
-    fn from(date: DateInput) -> NaiveDate {
+impl From<DateInput> for Date {
+    fn from(date: DateInput) -> Date {
         date.date
     }
 }
@@ -590,7 +590,7 @@ pub struct PurchaseInput {
 }
 
 impl PurchaseInput {
-    pub fn new(date: NaiveDate, desc_completor: Completor, tag_completor: Completor, account_completor: Completor) -> Self {
+    pub fn new(date: Date, desc_completor: Completor, tag_completor: Completor, account_completor: Completor) -> Self {
         Self{
             focus: PurchaseInputFocus::new(),
             date: DateInput::new(date),
@@ -730,6 +730,36 @@ impl TransactionsTE {
     pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>) -> Self {
         Self{transactions}
     }
+
+    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool) -> crossterm::Result<()> {
+        use crossterm::{
+            queue,
+            style::{Print, PrintStyledContent, Stylize},
+        };
+
+        assert_eq!(element_box.height(), 1);
+
+        let date_width = Date::STRING_WIDTH;
+        let amount_width = 6;
+        let const_space = date_width+1+amount_width;
+
+        assert!(element_box.width() > const_space+20);
+
+        element_box.begin().goto()?;
+
+        let mut space = " ".stylize();
+        if active {space = space.reverse()}
+
+        let mut date = transaction.date().to_string().stylize();
+        if active {date = date.reverse()}
+
+        let mut amount = transaction.abs_amount().as_string_width_padded(amount_width, false).stylize();
+        if active {amount = amount.reverse()}
+
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(amount));
+
+        Ok(())
+    }
 }
 
 impl TermElement for TransactionsTE {
@@ -764,12 +794,9 @@ impl TermElement for TransactionsTE {
         }
 
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
-            TermPos::new(element_box.left, element_box.top+index).goto()?;
-            let mut tmp = transaction.abs_amount().as_string_precision(3, true).stylize();
-            if begin_index + index == self.transactions.borrow().selection {
-                tmp = tmp.reverse();
-            }
-            queue!(stdout(), PrintStyledContent(tmp))?;
+            let trans_selected = begin_index + index == self.transactions.borrow().selection;
+            let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index, bottom: element_box.top+index+1};
+            Self::display_transaction(&transaction, trans_box, trans_selected);
         }
 
         Ok(())
@@ -816,7 +843,7 @@ impl AppContent {
         Self{tags, accounts, transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions), purchase: None}
     }
 
-    fn new_purchase(&mut self, date: NaiveDate) {
+    fn new_purchase(&mut self, date: Date) {
         let desc_completor = Completor::new(Vec::new());
         let tag_completor = Completor::new(self.tags.clone().0.into_keys().collect());
         let account_completor = Completor::new(self.accounts.clone().0.into_keys().collect());
@@ -894,7 +921,7 @@ impl TermElement for AppContent {
             None => {
                 match self.transactions_menu.input(event) {
                     Some(Char('i')) => {
-                        self.new_purchase(Local::now().date_naive());
+                        self.new_purchase(Date::today());
                         None
                     },
                     event_opt => event_opt,

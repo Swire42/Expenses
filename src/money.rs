@@ -106,4 +106,8 @@ impl CentsAmount {
             self.as_string_precision(nb_digits, separator)
         }
     }
+
+    pub fn as_string_width_padded(&self, width: usize, separator: bool) -> String {
+        format!("{: >width$}", self.as_string_width(width, separator), width = width)
+    }
 }
