@@ -114,6 +114,7 @@ pub fn truncate_align_center(text: &str, width: usize) -> String {
 }
 
 pub enum InputEvent {
+    Refresh,
     Up,
     Down,
     Left,
@@ -131,36 +132,40 @@ pub fn get_event() -> crossterm::Result<InputEvent> {
     use crossterm::event::{read, Event, KeyCode, KeyModifiers};
 
     loop {
-        let event = read()?;
+        match read()? {
+            Event::Key(key_event) => {
+                match key_event.modifiers {
+                    KeyModifiers::NONE => {
+                        match key_event.code {
+                            KeyCode::Esc => return Ok(InputEvent::Esc),
+                            KeyCode::Enter => return Ok(InputEvent::Enter),
+                            KeyCode::Up => return Ok(InputEvent::Up),
+                            KeyCode::Down => return Ok(InputEvent::Down),
+                            KeyCode::Left => return Ok(InputEvent::Left),
+                            KeyCode::Right => return Ok(InputEvent::Right),
+                            KeyCode::Backspace => return Ok(InputEvent::Backspace),
+                            KeyCode::Delete => return Ok(InputEvent::Delete),
+                            KeyCode::Tab => return Ok(InputEvent::Tab),
+                            _ => ()
+                        }
+                    },
+                    KeyModifiers::SHIFT => {
+                        match key_event.code {
+                            KeyCode::BackTab => return Ok(InputEvent::BackTab),
+                            _ => ()
+                        }
+                    },
+                    _ => (),
+                }
 
-        if let Event::Key(key_event) = event {
-            match key_event.modifiers {
-                KeyModifiers::NONE => {
-                    match key_event.code {
-                        KeyCode::Esc => return Ok(InputEvent::Esc),
-                        KeyCode::Enter => return Ok(InputEvent::Enter),
-                        KeyCode::Up => return Ok(InputEvent::Up),
-                        KeyCode::Down => return Ok(InputEvent::Down),
-                        KeyCode::Left => return Ok(InputEvent::Left),
-                        KeyCode::Right => return Ok(InputEvent::Right),
-                        KeyCode::Backspace => return Ok(InputEvent::Backspace),
-                        KeyCode::Delete => return Ok(InputEvent::Delete),
-                        KeyCode::Tab => return Ok(InputEvent::Tab),
-                        _ => ()
-                    }
-                },
-                KeyModifiers::SHIFT => {
-                    match key_event.code {
-                        KeyCode::BackTab => return Ok(InputEvent::BackTab),
-                        _ => ()
-                    }
-                },
-                _ => (),
-            }
-
-            if let KeyCode::Char(c) = key_event.code {
-                return Ok(InputEvent::Char(c));
-            }
+                if let KeyCode::Char(c) = key_event.code {
+                    return Ok(InputEvent::Char(c));
+                }
+            },
+            Event::Resize(_, _) => {
+                return Ok(InputEvent::Refresh);
+            },
+            _ => (),
         }
     }
 }
