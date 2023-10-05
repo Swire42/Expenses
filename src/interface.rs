@@ -795,11 +795,11 @@ impl TransactionsTE {
 
         let space = simple_stylize(" ", Color::Reset, true, false);
 
-        let date = simple_stylize(truncate_align_left("Date", date_width), Color::Reset, true, false);
-        let int_amount = simple_stylize(truncate_align_left("Int", amount_width), Color::Reset, true, false);
-        let ext_amount = simple_stylize(truncate_align_left("Ext", amount_width), Color::Reset, true, false);
-        let kind = simple_stylize(truncate_align_left("Kind", kind_width), Color::Reset, true, false);
-        let desc = simple_stylize(truncate_align_left("Desc", desc_width), Color::Reset, true, false);
+        let date = simple_stylize(truncate_align_center("Date", date_width), Color::Reset, true, false);
+        let int_amount = simple_stylize(truncate_align_center("Internal", amount_width), Color::Reset, true, false);
+        let ext_amount = simple_stylize(truncate_align_center("External", amount_width), Color::Reset, true, false);
+        let kind = simple_stylize(truncate_align_center("Kind", kind_width), Color::Reset, true, false);
+        let desc = simple_stylize(truncate_align_center("Description", desc_width), Color::Reset, true, false);
 
         queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
 
