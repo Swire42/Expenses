@@ -3,12 +3,19 @@ use serde::{Serialize, Deserialize};
 
 use crate::tags::TagRef;
 use crate::accounts::AccountRef;
-use crate::money::CentsAmount;
+use crate::money::*;
 use crate::datetime::Date;
 use crate::yamlrw::YamlRW;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Consumers(pub BTreeMap<AccountRef, usize>);
+
+impl Consumers {
+    pub fn amounts(&self, total: CentsAmount) -> BTreeMap<AccountRef, CentsAmount> {
+        let amounts = total.subdiv(self.0.values().cloned().collect());
+        self.0.keys().cloned().zip(amounts).collect()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Purchase {
@@ -32,9 +39,27 @@ impl Transaction {
         }
     }
 
-    pub fn abs_amount(&self) -> &CentsAmount {
+    pub fn abs_amount(&self) -> CentsAmount {
         match &self {
-            Transaction::Purchase(purchase) => &purchase.amount,
+            Transaction::Purchase(purchase) => purchase.amount,
+        }
+    }
+
+    pub fn internal_balance(&self, account: &AccountRef) -> SignedCentsAmount {
+        match &self {
+            Transaction::Purchase(purchase) => purchase.consumers.amounts(purchase.amount).get(account).cloned().map(|x| SignedCentsAmount::negative(x)).unwrap_or(SignedCentsAmount::new(0)),
+        }
+    }
+
+    pub fn external_balance(&self, account: &AccountRef) -> SignedCentsAmount {
+        match &self {
+            Transaction::Purchase(purchase) => {
+                if &purchase.buyer == account {
+                    SignedCentsAmount::positive(purchase.amount) + self.internal_balance(account)
+                } else {
+                    self.internal_balance(account)
+                }
+            },
         }
     }
 

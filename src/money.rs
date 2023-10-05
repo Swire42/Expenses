@@ -10,6 +10,10 @@ impl CentsAmount {
         Self{cents}
     }
 
+    pub fn cents(&self) -> usize {
+        self.cents
+    }
+
     pub fn digits(&self) -> Vec<usize> {
         let mut ret = Vec::new();
         let mut value = self.cents;
@@ -121,5 +125,74 @@ impl CentsAmount {
             ret[k] += 1;
         }
         ret.into_iter().map(|c| Self::new(c)).collect()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SignedCentsAmount {
+    cents: isize,
+}
+
+impl SignedCentsAmount {
+    pub fn new(cents: isize) -> Self {
+        Self{cents}
+    }
+
+    pub fn cents(&self) -> isize {
+        self.cents
+    }
+
+    pub fn positive(amount: CentsAmount) -> Self {
+        Self{cents: amount.cents as isize}
+    }
+
+    pub fn negative(amount: CentsAmount) -> Self {
+        Self{cents: -(amount.cents as isize)}
+    }
+
+    pub fn abs(&self) -> CentsAmount {
+        CentsAmount{cents: self.cents.abs_diff(0)}
+    }
+
+    pub fn as_string_exact(&self, separator: bool) -> String {
+        use std::cmp::Ordering::*;
+
+        match self.cents.cmp(&0) {
+            Less => format!("-{}", self.abs().as_string_exact(separator)),
+            Equal => format!("{}", self.abs().as_string_exact(separator)),
+            Greater => format!("+{}", self.abs().as_string_exact(separator)),
+        }
+    }
+
+    pub fn as_string_precision(&self, nb_digits: usize, separator: bool) -> String {
+        use std::cmp::Ordering::*;
+
+        match self.cents.cmp(&0) {
+            Less => format!("-{}", self.abs().as_string_precision(nb_digits, separator)),
+            Equal => format!("{}", self.abs().as_string_precision(nb_digits, separator)),
+            Greater => format!("+{}", self.abs().as_string_precision(nb_digits, separator)),
+        }
+    }
+
+    pub fn as_string_width(&self, width: usize, separator: bool) -> String {
+        use std::cmp::Ordering::*;
+
+        match self.cents.cmp(&0) {
+            Less => format!("-{}", self.abs().as_string_width(width-1, separator)),
+            Equal => format!("{}", self.abs().as_string_width(width-1, separator)),
+            Greater => format!("+{}", self.abs().as_string_width(width-1, separator)),
+        }
+    }
+
+    pub fn as_string_width_padded(&self, width: usize, separator: bool) -> String {
+        format!("{: >width$}", self.as_string_width(width, separator), width = width)
+    }
+}
+
+impl std::ops::Add for SignedCentsAmount {
+    type Output = SignedCentsAmount;
+
+    fn add(self, other: Self) -> Self {
+        Self{cents: self.cents + other.cents}
     }
 }

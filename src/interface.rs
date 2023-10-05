@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use crate::term::*;
-use crate::money::CentsAmount;
+use crate::money::*;
 use crate::datetime::Date;
 use crate::completion::Completor;
 use crate::transaction::{Transactions, Transaction, Purchase, Consumers};
@@ -734,6 +734,50 @@ impl TransactionsTE {
     fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool) -> crossterm::Result<()> {
         use crossterm::{
             queue,
+            style::{PrintStyledContent, Color, StyledContent},
+        };
+
+        assert_eq!(element_box.height(), 1);
+
+        let date_cf = (Date::STRING_WIDTH, 0);
+        let amount_cf = (6, 0);
+        let space_cf = (1, 0);
+        let desc_cf = (10, 2);
+        let kind_cf = (6, 1);
+
+        let [_, _, kind_width, _, desc_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, amount_cf, space_cf, amount_cf]);
+
+        element_box.begin().goto()?;
+
+        let space = simple_stylize(" ", Color::Reset, true, active);
+
+        let date = simple_stylize(transaction.date().to_string(), Color::Reset, true, active);
+
+        fn stylize_amount(amount: SignedCentsAmount, width: usize, active: bool) -> StyledContent<String> {
+            use std::cmp::Ordering::*;
+            let color = match amount.cents().cmp(&0) {
+                Less => Color::Red,
+                Equal => Color::Reset,
+                Greater => Color::Green,
+            };
+            let bold = amount.cents() != 0;
+            simple_stylize(amount.as_string_width_padded(width, false), color, bold, active)
+        }
+
+        let int_amount = stylize_amount(transaction.internal_balance(&"Swire".to_string()), amount_width, active);
+        let ext_amount = stylize_amount(transaction.external_balance(&"Swire".to_string()), amount_width, active);
+
+        let kind = simple_stylize(truncate_align_left(&transaction.kind_str(), kind_width), Color::Reset, true, active);
+        let desc = simple_stylize(truncate_align_left(transaction.desc(), desc_width), Color::Reset, true, active);
+
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
+
+        Ok(())
+    }
+
+    fn display_transaction_header(element_box: TermBox) -> crossterm::Result<()> {
+        use crossterm::{
+            queue,
             style::{PrintStyledContent, Color},
         };
 
@@ -745,20 +789,19 @@ impl TransactionsTE {
         let desc_cf = (10, 2);
         let kind_cf = (6, 1);
 
-        let [_, _, kind_width, _, desc_width, _, amount_width] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, amount_cf]);
+        let [date_width, _, kind_width, _, desc_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, amount_cf, space_cf, amount_cf]);
 
         element_box.begin().goto()?;
 
-        let space = simple_stylize(" ", Color::Reset, true, active);
+        let space = simple_stylize(" ", Color::Reset, true, false);
 
-        let date = simple_stylize(transaction.date().to_string(), Color::Reset, true, active);
+        let date = simple_stylize(truncate_align_left("Date", date_width), Color::Reset, true, false);
+        let int_amount = simple_stylize(truncate_align_left("Int", amount_width), Color::Reset, true, false);
+        let ext_amount = simple_stylize(truncate_align_left("Ext", amount_width), Color::Reset, true, false);
+        let kind = simple_stylize(truncate_align_left("Kind", kind_width), Color::Reset, true, false);
+        let desc = simple_stylize(truncate_align_left("Desc", desc_width), Color::Reset, true, false);
 
-        let amount = simple_stylize(transaction.abs_amount().as_string_width_padded(amount_width, false), Color::Reset, true, active);
-
-        let kind = simple_stylize(truncate_align_left(transaction.kind_str(), kind_width), Color::Reset, true, active);
-        let desc = simple_stylize(truncate_align_left(transaction.desc().clone(), desc_width), Color::Reset, true, active);
-
-        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(amount))?;
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
 
         Ok(())
     }
@@ -772,12 +815,14 @@ impl TermElement for TransactionsTE {
         };
 
         let height = element_box.height();
+        assert!(height > 5);
+        let list_height = height - 1;
 
         let center_index = self.transactions.borrow().selection;
         let mut begin_index = center_index;
         let mut end_index = center_index;
 
-        while end_index - begin_index < height {
+        while end_index - begin_index < list_height {
             let avail_begin = begin_index > 0;
             let avail_end = end_index < self.transactions.borrow().transactions().len();
 
@@ -790,14 +835,12 @@ impl TermElement for TransactionsTE {
             }
         }
 
-        if begin_index == end_index {
-            element_box.begin().goto()?;
-            queue!(stdout(), Print("<empty>"))?;
-        }
+        let header_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top, bottom: element_box.top+1};
+        Self::display_transaction_header(header_box)?;
 
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
             let trans_selected = begin_index + index == self.transactions.borrow().selection;
-            let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index, bottom: element_box.top+index+1};
+            let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index+1, bottom: element_box.top+index+2};
             Self::display_transaction(&transaction, trans_box, trans_selected)?;
         }
 

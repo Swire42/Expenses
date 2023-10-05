@@ -73,9 +73,14 @@ pub fn subdiv_flex<const SIZE: usize>(total: usize, weights: [usize; SIZE]) -> [
     let wsum: usize = weights.iter().sum();
     let mut ret = weights.map(|w| total * w / wsum);
     let ret_width: usize = ret.iter().sum();
-    let rem_width = total - ret_width;
-    for k in 0..rem_width {
-        ret[k] += 1;
+    let mut rem_width = total - ret_width;
+    let mut k = 0;
+    while rem_width > 0 {
+        if ret[k] != 0 {
+            ret[k] += 1;
+            rem_width -= 1;
+        }
+        k += 1;
     }
     assert_eq!(ret.iter().sum::<usize>(), total);
     ret
@@ -96,9 +101,16 @@ pub fn subdiv_const_flex<const SIZE: usize>(total: usize, weights: [(usize, usiz
     ret
 }
 
-pub fn truncate_align_left(mut text: String, width: usize) -> String {
+pub fn truncate_align_left(text: &str, width: usize) -> String {
+    let mut text = text.to_string();
     text.truncate(width);
     format!("{: <width$}", text, width = width)
+}
+
+pub fn truncate_align_center(text: &str, width: usize) -> String {
+    let mut text = text.to_string();
+    text.truncate(width);
+    format!("{: ^width$}", text, width = width)
 }
 
 pub enum InputEvent {
