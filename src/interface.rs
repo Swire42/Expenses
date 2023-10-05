@@ -734,29 +734,31 @@ impl TransactionsTE {
     fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool) -> crossterm::Result<()> {
         use crossterm::{
             queue,
-            style::{Print, PrintStyledContent, Stylize},
+            style::{PrintStyledContent, Color},
         };
 
         assert_eq!(element_box.height(), 1);
 
-        let date_width = Date::STRING_WIDTH;
-        let amount_width = 6;
-        let const_space = date_width+1+amount_width;
+        let date_cf = (Date::STRING_WIDTH, 0);
+        let amount_cf = (6, 0);
+        let space_cf = (1, 0);
+        let desc_cf = (10, 2);
+        let kind_cf = (6, 1);
 
-        assert!(element_box.width() > const_space+20);
+        let [_, _, kind_width, _, desc_width, _, amount_width] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, amount_cf]);
 
         element_box.begin().goto()?;
 
-        let mut space = " ".stylize();
-        if active {space = space.reverse()}
+        let space = simple_stylize(" ", Color::Reset, true, active);
 
-        let mut date = transaction.date().to_string().stylize();
-        if active {date = date.reverse()}
+        let date = simple_stylize(transaction.date().to_string(), Color::Reset, true, active);
 
-        let mut amount = transaction.abs_amount().as_string_width_padded(amount_width, false).stylize();
-        if active {amount = amount.reverse()}
+        let amount = simple_stylize(transaction.abs_amount().as_string_width_padded(amount_width, false), Color::Reset, true, active);
 
-        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(amount));
+        let kind = simple_stylize(truncate_align_left(transaction.kind_str(), kind_width), Color::Reset, true, active);
+        let desc = simple_stylize(truncate_align_left(transaction.desc().clone(), desc_width), Color::Reset, true, active);
+
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(amount))?;
 
         Ok(())
     }
@@ -766,7 +768,7 @@ impl TermElement for TransactionsTE {
     fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
         use crossterm::{
             queue,
-            style::{Print, PrintStyledContent, Stylize},
+            style::{Print},
         };
 
         let height = element_box.height();
@@ -796,7 +798,7 @@ impl TermElement for TransactionsTE {
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
             let trans_selected = begin_index + index == self.transactions.borrow().selection;
             let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index, bottom: element_box.top+index+1};
-            Self::display_transaction(&transaction, trans_box, trans_selected);
+            Self::display_transaction(&transaction, trans_box, trans_selected)?;
         }
 
         Ok(())

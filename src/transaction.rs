@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use std::cmp::Ordering;
 
 use crate::tags::TagRef;
 use crate::accounts::AccountRef;
@@ -21,13 +20,6 @@ pub struct Purchase {
     pub consumers: Consumers,
 }
 
-impl Purchase {
-    #[allow(unused)]
-    pub fn date_cmp(&self, other: &Self) -> Ordering {
-        self.date.cmp(&other.date)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Transaction {
     Purchase(Purchase),
@@ -40,14 +32,22 @@ impl Transaction {
         }
     }
 
-    pub fn abs_amount(&self) -> CentsAmount {
+    pub fn abs_amount(&self) -> &CentsAmount {
         match &self {
-            Transaction::Purchase(purchase) => purchase.amount,
+            Transaction::Purchase(purchase) => &purchase.amount,
         }
     }
 
-    pub fn date_cmp(&self, other: &Self) -> Ordering {
-        self.date().cmp(&other.date())
+    pub fn desc(&self) -> &String {
+        match &self {
+            Transaction::Purchase(purchase) => &purchase.desc,
+        }
+    }
+
+    pub fn kind_str(&self) -> String {
+        match &self {
+            Transaction::Purchase(purchase) => format!("{}", purchase.tag),
+        }
     }
 }
 
@@ -60,7 +60,7 @@ impl Transactions {
     }
 
     pub fn fix(&mut self) {
-        self.0.sort_by(|a, b| a.date_cmp(&b));
+        self.0.sort_by(|a, b| a.date().cmp(b.date()));
     }
 
     pub fn add(&mut self, transaction: Transaction) -> usize {

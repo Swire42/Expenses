@@ -49,6 +49,58 @@ impl TermBox {
     }
 }
 
+pub fn simple_stylize<T: std::fmt::Display+crossterm::style::Stylize<Styled=crossterm::style::StyledContent<T>>>(text: T, color: crossterm::style::Color, bold: bool, reverse: bool) -> T::Styled {
+    use crossterm::style::Stylize;
+
+    let mut ret = text.stylize();
+
+    if bold {
+        ret = ret.bold();
+    }
+
+    if reverse {
+        ret = ret.on(color);
+        ret = ret.reverse();
+    } else {
+        ret = ret.with(color);
+    }
+
+    ret
+}
+
+pub fn subdiv_flex<const SIZE: usize>(total: usize, weights: [usize; SIZE]) -> [usize; SIZE] {
+    assert!(SIZE > 0);
+    let wsum: usize = weights.iter().sum();
+    let mut ret = weights.map(|w| total * w / wsum);
+    let ret_width: usize = ret.iter().sum();
+    let rem_width = total - ret_width;
+    for k in 0..rem_width {
+        ret[k] += 1;
+    }
+    assert_eq!(ret.iter().sum::<usize>(), total);
+    ret
+}
+
+pub fn subdiv_const_flex<const SIZE: usize>(total: usize, weights: [(usize, usize); SIZE]) -> [usize; SIZE] {
+    assert!(SIZE > 0);
+    let const_widths = weights.clone().map(|(c, _)| c);
+    let const_width: usize = const_widths.iter().sum();
+    assert!(total > const_width);
+    let flex_width: usize = total - const_width;
+    let flex_widths = subdiv_flex(flex_width, weights.map(|(_, f)| f));
+    let mut ret = const_widths;
+    for k in 0..SIZE {
+        ret[k] += flex_widths[k];
+    }
+    assert_eq!(ret.iter().sum::<usize>(), total);
+    ret
+}
+
+pub fn truncate_align_left(mut text: String, width: usize) -> String {
+    text.truncate(width);
+    format!("{: <width$}", text, width = width)
+}
+
 pub enum InputEvent {
     Up,
     Down,

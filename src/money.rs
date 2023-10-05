@@ -110,4 +110,16 @@ impl CentsAmount {
     pub fn as_string_width_padded(&self, width: usize, separator: bool) -> String {
         format!("{: >width$}", self.as_string_width(width, separator), width = width)
     }
+
+    pub fn subdiv(&self, weights: Vec<usize>) -> Vec<Self> {
+        assert!(!weights.is_empty());
+        let wsum: usize = weights.iter().sum();
+        let mut ret: Vec<usize> = weights.iter().map(|w| self.cents * w / wsum).collect();
+        let ret_sum: usize = ret.iter().sum();
+        let rem = self.cents - ret_sum;
+        for k in 0..rem {
+            ret[k] += 1;
+        }
+        ret.into_iter().map(|c| Self::new(c)).collect()
+    }
 }
