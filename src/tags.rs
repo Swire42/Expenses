@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use serde::{Serialize, Deserialize};
 
 use crate::yamlrw::YamlRW;
@@ -18,7 +18,7 @@ impl TagData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tags(pub HashMap<TagRef, TagData>);
+pub struct Tags(pub BTreeMap<TagRef, TagData>);
 
 impl YamlRW for Tags {}
 

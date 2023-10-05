@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use serde::{Serialize, Deserialize};
 
 use crate::yamlrw::YamlRW;
@@ -9,6 +9,6 @@ pub type AccountRef = String;
 pub struct AccountData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Accounts(pub HashMap<AccountRef, AccountData>);
+pub struct Accounts(pub BTreeMap<AccountRef, AccountData>);
 
 impl YamlRW for Accounts {}

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use serde::{Serialize, Deserialize};
 
 use crate::tags::TagRef;
@@ -8,7 +8,7 @@ use crate::datetime::Date;
 use crate::yamlrw::YamlRW;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Consumers(pub HashMap<AccountRef, usize>);
+pub struct Consumers(pub BTreeMap<AccountRef, usize>);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Purchase {
