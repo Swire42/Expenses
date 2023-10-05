@@ -9,7 +9,7 @@ use crate::datetime::Date;
 use crate::completion::Completor;
 use crate::transaction::{Transactions, Transaction, Purchase, Consumers};
 use crate::tags::Tags;
-use crate::accounts::Accounts;
+use crate::accounts::*;
 
 #[derive(Clone)]
 pub struct DateInput {
@@ -724,17 +724,18 @@ impl InteractiveTransactions {
 #[derive(Clone)]
 pub struct TransactionsTE {
     transactions: Rc<RefCell<InteractiveTransactions>>,
+    accounts: Rc<RefCell<Accounts>>,
 }
 
 impl TransactionsTE {
-    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>) -> Self {
-        Self{transactions}
+    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>, accounts: Rc<RefCell<Accounts>>) -> Self {
+        Self{transactions, accounts}
     }
 
-    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool) -> crossterm::Result<()> {
+    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool, accounts_data: &Accounts) -> crossterm::Result<()> {
         use crossterm::{
             queue,
-            style::{PrintStyledContent, Color, StyledContent},
+            style::{Print, PrintStyledContent, Color, StyledContent},
         };
 
         assert_eq!(element_box.height(), 1);
@@ -744,8 +745,9 @@ impl TransactionsTE {
         let space_cf = (1, 0);
         let desc_cf = (10, 2);
         let kind_cf = (6, 1);
+        let accounts_cf = (6, 1);
 
-        let [_, _, kind_width, _, desc_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, amount_cf, space_cf, amount_cf]);
+        let [_, _, kind_width, _, desc_width, _, accounts_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, accounts_cf, space_cf, amount_cf, space_cf, amount_cf]);
 
         element_box.begin().goto()?;
 
@@ -764,13 +766,49 @@ impl TransactionsTE {
             simple_stylize(amount.as_string_width_padded(width, false), color, bold, active)
         }
 
+        fn stylize_account(account: AccountRef, short: bool, active: bool, accounts_data: &Accounts) -> StyledContent<String> {
+            let color: Color = accounts_data.0.get(&account).unwrap().color().into();
+            if short {
+                simple_stylize(account[0..1].to_string(), color, true, active)
+            } else {
+                simple_stylize(account, color, true, active)
+            }
+        }
+
+        fn stylize_accounts(accounts: Vec<AccountRef>, width: usize, active: bool, accounts_data: &Accounts) -> String {
+            if accounts.is_empty() {
+                return simple_stylize(" ".repeat(width), Color::Reset, true, active).to_string();
+            }
+            let space = simple_stylize(" ", Color::Reset, true, active);
+            let width_spaces = accounts.len() - 1;
+            let width_large = accounts.iter().map(|x| x.len()).sum::<usize>() + width_spaces;
+            let width_short = accounts.len() + width_spaces;
+            if width >= width_short {
+                let short = width < width_large;
+                let rem_width = width - (if short {width_short} else {width_large});
+                let mut ret = String::new();
+                let mut iter = accounts.into_iter();
+                ret += &simple_stylize(" ".repeat(rem_width/2), Color::Reset, true, active).to_string();
+                ret += &stylize_account(iter.next().unwrap(), short, active, accounts_data).to_string();
+                for account in iter {
+                    ret += &simple_stylize(" ", Color::Reset, true, active).to_string();
+                    ret += &stylize_account(account, short, active, accounts_data).to_string();
+                }
+                ret += &simple_stylize(" ".repeat((rem_width+1)/2), Color::Reset, true, active).to_string();
+                ret
+            } else {
+                simple_stylize(format!("{: ^width$}", "...", width = width), Color::Reset, true, active).to_string()
+            }
+        }
+
         let int_amount = stylize_amount(transaction.internal_balance(&"Swire".to_string()), amount_width, active);
         let ext_amount = stylize_amount(transaction.external_balance(&"Swire".to_string()), amount_width, active);
 
         let kind = simple_stylize(truncate_align_left(&transaction.kind_str(), kind_width), Color::Reset, true, active);
         let desc = simple_stylize(truncate_align_left(transaction.desc(), desc_width), Color::Reset, true, active);
+        let accounts = stylize_accounts(transaction.accounts(), accounts_width, active, accounts_data);
 
-        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), Print(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
 
         Ok(())
     }
@@ -788,8 +826,9 @@ impl TransactionsTE {
         let space_cf = (1, 0);
         let desc_cf = (10, 2);
         let kind_cf = (6, 1);
+        let accounts_cf = (6, 1);
 
-        let [date_width, _, kind_width, _, desc_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, amount_cf, space_cf, amount_cf]);
+        let [date_width, _, kind_width, _, desc_width, _, accounts_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, accounts_cf, space_cf, amount_cf, space_cf, amount_cf]);
 
         element_box.begin().goto()?;
 
@@ -800,8 +839,9 @@ impl TransactionsTE {
         let ext_amount = simple_stylize(truncate_align_center("External", amount_width), Color::Reset, true, false);
         let kind = simple_stylize(truncate_align_center("Kind", kind_width), Color::Reset, true, false);
         let desc = simple_stylize(truncate_align_center("Description", desc_width), Color::Reset, true, false);
+        let accounts = simple_stylize(truncate_align_center("Accounts", accounts_width), Color::Reset, true, false);
 
-        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
 
         Ok(())
     }
@@ -809,11 +849,6 @@ impl TransactionsTE {
 
 impl TermElement for TransactionsTE {
     fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
-        use crossterm::{
-            queue,
-            style::{Print},
-        };
-
         let height = element_box.height();
         assert!(height > 5);
         let list_height = height - 1;
@@ -841,7 +876,7 @@ impl TermElement for TransactionsTE {
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
             let trans_selected = begin_index + index == self.transactions.borrow().selection;
             let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index+1, bottom: element_box.top+index+2};
-            Self::display_transaction(&transaction, trans_box, trans_selected)?;
+            Self::display_transaction(&transaction, trans_box, trans_selected, &self.accounts.borrow())?;
         }
 
         Ok(())
@@ -866,7 +901,7 @@ impl TermElement for TransactionsTE {
 #[derive(Clone)]
 pub struct AppContent {
     tags: Tags,
-    accounts: Accounts,
+    accounts: Rc<RefCell<Accounts>>,
     transactions: Rc<RefCell<InteractiveTransactions>>,
     transactions_menu: TransactionsTE,
     purchase: Option<PurchaseInput>,
@@ -880,18 +915,19 @@ impl AppContent {
         tags.fix();
 
         let accounts = Accounts::read_yaml("accounts.yaml").unwrap();
+        let accounts = Rc::new(RefCell::new(accounts));
 
         let mut transactions = Transactions::read_yaml("data.yaml").unwrap_or_else(|_| Transactions::new());
         transactions.fix();
         let transactions = Rc::new(RefCell::new(InteractiveTransactions::new(transactions)));
 
-        Self{tags, accounts, transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions), purchase: None}
+        Self{tags, accounts: Rc::clone(&accounts), transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions, accounts), purchase: None}
     }
 
     fn new_purchase(&mut self, date: Date) {
         let desc_completor = Completor::new(Vec::new());
         let tag_completor = Completor::new(self.tags.clone().0.into_keys().collect());
-        let account_completor = Completor::new(self.accounts.clone().0.into_keys().collect());
+        let account_completor = Completor::new(self.accounts.borrow().clone().0.into_keys().collect());
 
         self.purchase = Some(PurchaseInput::new(date, desc_completor, tag_completor, account_completor));
     }

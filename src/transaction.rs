@@ -63,6 +63,17 @@ impl Transaction {
         }
     }
 
+    pub fn accounts(&self) -> Vec<AccountRef> {
+        let mut ret = Vec::new();
+        match &self {
+            Transaction::Purchase(purchase) => {
+                ret.push(purchase.buyer.clone());
+                ret.append(&mut purchase.consumers.0.keys().cloned().filter(|x| x != &purchase.buyer).collect());
+            },
+        }
+        ret
+    }
+
     pub fn desc(&self) -> &String {
         match &self {
             Transaction::Purchase(purchase) => &purchase.desc,
