@@ -80,7 +80,7 @@ impl From<DateInput> for Date {
 
 #[derive(Clone)]
 pub struct AmountInput {
-    cents: usize,
+    cents: u64,
     separator_dist: Option<usize>,
 }
 
@@ -136,9 +136,7 @@ impl TermElement for AmountInput {
             Backspace => {
                 match self.separator_dist {
                     None => {
-                        if self.cents < 100_000_000 {
-                            self.cents = self.cents / 1000 * 100;
-                        }
+                        self.cents = self.cents / 1000 * 100;
                     },
                     Some(0) => {
                         self.separator_dist = None;
@@ -156,10 +154,13 @@ impl TermElement for AmountInput {
                 None
             }
             Char(c) => {
-                if let Some(Ok(val)) = c.to_digit(10).map(usize::try_from) {
+                if let Some(Ok(val)) = c.to_digit(10).map(u64::try_from) {
                     match self.separator_dist {
                         None => {
-                            self.cents = self.cents * 10 + val * 100;
+                            // avoid overflow
+                            if self.cents < 100_000_000_00 {
+                                self.cents = self.cents * 10 + val * 100;
+                            }
                             None
                         },
                         Some(0) => {

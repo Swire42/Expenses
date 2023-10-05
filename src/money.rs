@@ -2,15 +2,15 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CentsAmount {
-    cents: usize,
+    cents: u64,
 }
 
 impl CentsAmount {
-    pub fn new(cents: usize) -> Self {
+    pub fn new(cents: u64) -> Self {
         Self{cents}
     }
 
-    pub fn cents(&self) -> usize {
+    pub fn cents(&self) -> u64 {
         self.cents
     }
 
@@ -19,7 +19,7 @@ impl CentsAmount {
         let mut value = self.cents;
 
         while value > 0 {
-            ret.push(value%10);
+            ret.push((value%10) as usize);
             value /= 10;
         }
 
@@ -117,10 +117,10 @@ impl CentsAmount {
 
     pub fn subdiv(&self, weights: Vec<usize>) -> Vec<Self> {
         assert!(!weights.is_empty());
-        let wsum: usize = weights.iter().sum();
-        let mut ret: Vec<usize> = weights.iter().map(|w| self.cents * w / wsum).collect();
-        let ret_sum: usize = ret.iter().sum();
-        let rem = self.cents - ret_sum;
+        let wsum: u64 = weights.iter().sum::<usize>() as u64;
+        let mut ret: Vec<u64> = weights.iter().map(|w| self.cents * *w as u64 / wsum).collect();
+        let ret_sum: u64 = ret.iter().sum();
+        let rem = (self.cents - ret_sum) as usize;
         for k in 0..rem {
             ret[k] += 1;
         }
@@ -130,24 +130,24 @@ impl CentsAmount {
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SignedCentsAmount {
-    cents: isize,
+    cents: i64,
 }
 
 impl SignedCentsAmount {
-    pub fn new(cents: isize) -> Self {
+    pub fn new(cents: i64) -> Self {
         Self{cents}
     }
 
-    pub fn cents(&self) -> isize {
+    pub fn cents(&self) -> i64 {
         self.cents
     }
 
     pub fn positive(amount: CentsAmount) -> Self {
-        Self{cents: amount.cents as isize}
+        Self{cents: amount.cents as i64}
     }
 
     pub fn negative(amount: CentsAmount) -> Self {
-        Self{cents: -(amount.cents as isize)}
+        Self{cents: -(amount.cents as i64)}
     }
 
     pub fn abs(&self) -> CentsAmount {
