@@ -76,7 +76,7 @@ pub fn subdiv_flex<const SIZE: usize>(total: usize, weights: [usize; SIZE]) -> [
     let mut rem_width = total - ret_width;
     let mut k = 0;
     while rem_width > 0 {
-        if ret[k] != 0 {
+        if weights[k] != 0 {
             ret[k] += 1;
             rem_width -= 1;
         }
