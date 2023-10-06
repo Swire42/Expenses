@@ -7,13 +7,17 @@ pub type TagRef = String;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagData {
-    dur: Option<usize>,
+    dur: usize,
     parent: Option<TagRef>,
 }
 
 impl TagData {
-    pub fn new() -> Self {
-        Self{dur: None, parent: None}
+    pub fn new(dur: usize) -> Self {
+        Self{dur, parent: None}
+    }
+
+    pub fn dur(&self) -> usize {
+        self.dur
     }
 }
 
@@ -25,9 +29,9 @@ impl YamlRW for Tags {}
 impl Tags {
     pub fn fix(&mut self) {
         for data in self.0.clone().into_values() {
-            if let TagData{parent: Some(parent), ..} = data {
+            if let TagData{dur, parent: Some(parent)} = data {
                 if !self.0.contains_key(&parent) {
-                    self.0.insert(parent, TagData::new());
+                    self.0.insert(parent, TagData::new(dur));
                 }
             }
         }

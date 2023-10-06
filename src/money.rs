@@ -128,6 +128,52 @@ impl CentsAmount {
     }
 }
 
+impl std::ops::Add for CentsAmount {
+    type Output = CentsAmount;
+
+    fn add(self, other: Self) -> Self {
+        Self{cents: self.cents + other.cents}
+    }
+}
+
+impl std::ops::AddAssign for CentsAmount {
+    fn add_assign(&mut self, other: Self) {
+        self.cents += other.cents;
+    }
+}
+
+impl std::ops::Sub for CentsAmount {
+    type Output = CentsAmount;
+
+    fn sub(self, other: Self) -> Self {
+        Self{cents: self.cents - other.cents}
+    }
+}
+
+impl std::ops::SubAssign for CentsAmount {
+    fn sub_assign(&mut self, other: Self) {
+        self.cents -= other.cents;
+    }
+}
+
+impl std::ops::Div<usize> for CentsAmount {
+    type Output = CentsAmount;
+
+    fn div(self, other: usize) -> Self {
+        Self{cents: self.cents / other as u64}
+    }
+}
+
+impl std::ops::Div<CentsAmount> for CentsAmount {
+    type Output = usize;
+
+    fn div(self, other: CentsAmount) -> usize {
+        (self.cents / other.cents) as usize
+    }
+}
+
+
+
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SignedCentsAmount {
     cents: i64,

@@ -801,7 +801,6 @@ impl TransactionsTE {
             if accounts.is_empty() {
                 return simple_stylize(" ".repeat(width), Color::Reset, true, active).to_string();
             }
-            let space = simple_stylize(" ", Color::Reset, true, active);
             let width_spaces = accounts.len() - 1;
             let width_large = accounts.iter().map(|x| x.len()).sum::<usize>() + width_spaces;
             let width_short = accounts.len() + width_spaces;

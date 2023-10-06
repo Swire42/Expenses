@@ -25,4 +25,12 @@ impl Date {
     pub fn pred(&self) -> Self {
         Self{date: self.date.pred_opt().unwrap()}
     }
+
+    pub fn incr(&mut self) {
+        *self = self.succ();
+    }
+
+    pub fn decr(&mut self) {
+        *self = self.pred();
+    }
 }

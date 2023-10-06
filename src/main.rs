@@ -4,6 +4,7 @@ mod tags;
 mod accounts;
 mod transaction;
 mod money;
+mod moneystate;
 mod color;
 mod datetime;
 mod yamlrw;
