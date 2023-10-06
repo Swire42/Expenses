@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use serde::{Serialize, Deserialize};
 
-use crate::tags::TagRef;
+use crate::tags::*;
 use crate::accounts::AccountRef;
 use crate::money::*;
+use crate::moneystate::*;
 use crate::datetime::Date;
 use crate::yamlrw::YamlRW;
 
@@ -27,6 +28,26 @@ pub struct Purchase {
     pub consumers: Consumers,
 }
 
+impl Purchase {
+    pub fn internal_delta(&self, account: &AccountRef) -> SignedCentsAmount {
+        self.consumers.amounts(self.amount).get(account).cloned().map(|x| SignedCentsAmount::negative(x)).unwrap_or(SignedCentsAmount::new(0))
+    }
+
+    pub fn external_delta(&self, account: &AccountRef) -> SignedCentsAmount {
+        if &self.buyer == account {
+            SignedCentsAmount::positive(self.amount) + self.internal_delta(account)
+        } else {
+            self.internal_delta(account)
+        }
+    }
+
+    pub fn internal_flow(&self, account: &AccountRef, tags: &Tags, transactions: &Transactions) -> SignedFlow {
+        SignedFlow::approx(self.internal_delta(account), &transactions.snapshot_before(&self.date, account, tags).state().0[&self.tag], &transactions.snapshot_after(&self.date, account, tags).state().0[&self.tag])
+    }
+}
+
+
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Transaction {
     Purchase(Purchase),
@@ -45,21 +66,21 @@ impl Transaction {
         }
     }
 
-    pub fn internal_balance(&self, account: &AccountRef) -> SignedCentsAmount {
+    pub fn internal_delta(&self, account: &AccountRef) -> SignedCentsAmount {
         match &self {
-            Transaction::Purchase(purchase) => purchase.consumers.amounts(purchase.amount).get(account).cloned().map(|x| SignedCentsAmount::negative(x)).unwrap_or(SignedCentsAmount::new(0)),
+            Transaction::Purchase(purchase) => purchase.internal_delta(account),
         }
     }
 
-    pub fn external_balance(&self, account: &AccountRef) -> SignedCentsAmount {
+    pub fn external_delta(&self, account: &AccountRef) -> SignedCentsAmount {
         match &self {
-            Transaction::Purchase(purchase) => {
-                if &purchase.buyer == account {
-                    SignedCentsAmount::positive(purchase.amount) + self.internal_balance(account)
-                } else {
-                    self.internal_balance(account)
-                }
-            },
+            Transaction::Purchase(purchase) => purchase.external_delta(account),
+        }
+    }
+
+    pub fn internal_flow(&self, account: &AccountRef, tags: &Tags, transactions: &Transactions) -> SignedFlow {
+        match &self {
+            Transaction::Purchase(purchase) => purchase.internal_flow(account, tags, transactions),
         }
     }
 
@@ -115,6 +136,50 @@ impl Transactions {
 
     pub fn vec(&self) -> &Vec<Transaction> {
         &self.0
+    }
+
+    pub fn initial_snapshot(&self, tags: &Tags) -> FlowStatesSnapshot {
+        FlowStatesSnapshot::new(self.0.get(0).map_or_else(|| Date::today(), |x| x.date().clone()), tags)
+    }
+
+    pub fn snapshot_before(&self, date: &Date, account: &AccountRef, tags: &Tags) -> FlowStatesSnapshot {
+        let mut ret = self.initial_snapshot(tags);
+
+        for tr in &self.0 {
+            if tr.date() >= date {
+                break;
+            }
+
+            match tr {
+                Transaction::Purchase(purchase) => {
+                    ret.add(purchase, account, tags);
+                },
+            }
+        }
+
+        ret.forward(&date);
+
+        ret
+    }
+
+    pub fn snapshot_after(&self, date: &Date, account: &AccountRef, tags: &Tags) -> FlowStatesSnapshot {
+        let mut ret = self.initial_snapshot(tags);
+
+        for tr in &self.0 {
+            if tr.date() > date {
+                break;
+            }
+
+            match tr {
+                Transaction::Purchase(purchase) => {
+                    ret.add(purchase, account, tags);
+                },
+            }
+        }
+
+        ret.forward(date);
+
+        ret
     }
 }
 

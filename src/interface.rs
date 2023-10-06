@@ -747,14 +747,15 @@ impl InteractiveTransactions {
 pub struct TransactionsTE {
     transactions: Rc<RefCell<InteractiveTransactions>>,
     accounts: Rc<RefCell<Accounts>>,
+    tags: Rc<RefCell<Tags>>,
 }
 
 impl TransactionsTE {
-    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>, accounts: Rc<RefCell<Accounts>>) -> Self {
-        Self{transactions, accounts}
+    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>, accounts: Rc<RefCell<Accounts>>, tags: Rc<RefCell<Tags>>) -> Self {
+        Self{transactions, accounts, tags}
     }
 
-    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool, accounts_data: &Accounts) -> crossterm::Result<()> {
+    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool, tags_data: &Tags, accounts_data: &Accounts, transactions_data: &Transactions) -> crossterm::Result<()> {
         use crossterm::{
             queue,
             style::{Print, PrintStyledContent, Color, StyledContent},
@@ -763,13 +764,15 @@ impl TransactionsTE {
         assert_eq!(element_box.height(), 1);
 
         let date_cf = (Date::STRING_WIDTH, 0);
-        let amount_cf = (6, 0);
+        let amount_cf = (8, 1);
         let space_cf = (1, 0);
-        let desc_cf = (10, 2);
-        let kind_cf = (6, 1);
-        let accounts_cf = (6, 1);
+        let desc_cf = (6, 20);
+        let kind_cf = (6, 4);
+        let accounts_cf = (6, 4);
 
-        let [_, _, kind_width, _, desc_width, _, accounts_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, accounts_cf, space_cf, amount_cf, space_cf, amount_cf]);
+        let [date_width, _, kind_width, _, desc_width, _, accounts_width, _, internal_delta_width, _, external_delta_width, _, internal_flow_width] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, accounts_cf, space_cf, amount_cf, space_cf, amount_cf, space_cf, amount_cf]);
+
+        assert_eq!(date_width, Date::STRING_WIDTH);
 
         element_box.begin().goto()?;
 
@@ -777,7 +780,8 @@ impl TransactionsTE {
 
         let date = simple_stylize(transaction.date().to_string(), Color::Reset, true, active);
 
-        fn stylize_amount(amount: SignedCentsAmount, width: usize, active: bool) -> StyledContent<String> {
+        fn stylize_amount(amount: SignedCentsAmount, currency: &str, width: usize, active: bool) -> StyledContent<String> {
+            assert!(width>currency.chars().count());
             use std::cmp::Ordering::*;
             let color = match amount.cents().cmp(&0) {
                 Less => Color::Red,
@@ -785,7 +789,7 @@ impl TransactionsTE {
                 Greater => Color::Green,
             };
             let bold = amount.cents() != 0;
-            simple_stylize(amount.as_string_width_padded(width, false), color, bold, active)
+            simple_stylize(amount.as_string_width_padded(width-currency.chars().count(), false)+currency, color, bold, active)
         }
 
         fn stylize_account(account: AccountRef, short: bool, active: bool, accounts_data: &Accounts) -> StyledContent<String> {
@@ -822,14 +826,16 @@ impl TransactionsTE {
             }
         }
 
-        let int_amount = stylize_amount(transaction.internal_balance(&"Swire".to_string()), amount_width, active);
-        let ext_amount = stylize_amount(transaction.external_balance(&"Swire".to_string()), amount_width, active);
-
         let kind = simple_stylize(truncate_align_left(&transaction.kind_str(), kind_width), Color::Reset, true, active);
         let desc = simple_stylize(truncate_align_left(transaction.desc(), desc_width), Color::Reset, true, active);
         let accounts = stylize_accounts(transaction.accounts(), accounts_width, active, accounts_data);
 
-        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), Print(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
+        let int_amount = stylize_amount(transaction.internal_delta(&"Swire".to_string()), "€", internal_delta_width, active);
+        let ext_amount = stylize_amount(transaction.external_delta(&"Swire".to_string()), "€", external_delta_width, active);
+
+        let flow = stylize_amount(transaction.internal_flow(&"Swire".to_string(), tags_data, transactions_data).0, "¤", internal_flow_width, active);
+
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), Print(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount), PrintStyledContent(space), PrintStyledContent(flow))?;
 
         Ok(())
     }
@@ -843,26 +849,27 @@ impl TransactionsTE {
         assert_eq!(element_box.height(), 1);
 
         let date_cf = (Date::STRING_WIDTH, 0);
-        let amount_cf = (6, 0);
+        let amount_cf = (8, 1);
         let space_cf = (1, 0);
-        let desc_cf = (10, 2);
-        let kind_cf = (6, 1);
-        let accounts_cf = (6, 1);
+        let desc_cf = (6, 20);
+        let kind_cf = (6, 4);
+        let accounts_cf = (6, 4);
 
-        let [date_width, _, kind_width, _, desc_width, _, accounts_width, _, amount_width, _, _] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, accounts_cf, space_cf, amount_cf, space_cf, amount_cf]);
+        let [date_width, _, kind_width, _, desc_width, _, accounts_width, _, internal_delta_width, _, external_delta_width, _, internal_flow_width] = subdiv_const_flex(element_box.width(), [date_cf, space_cf, kind_cf, space_cf, desc_cf, space_cf, accounts_cf, space_cf, amount_cf, space_cf, amount_cf, space_cf, amount_cf]);
 
         element_box.begin().goto()?;
 
         let space = simple_stylize(" ", Color::Reset, true, false);
 
         let date = simple_stylize(truncate_align_center("Date", date_width), Color::Reset, true, false);
-        let int_amount = simple_stylize(truncate_align_center("Internal", amount_width), Color::Reset, true, false);
-        let ext_amount = simple_stylize(truncate_align_center("External", amount_width), Color::Reset, true, false);
         let kind = simple_stylize(truncate_align_center("Kind", kind_width), Color::Reset, true, false);
         let desc = simple_stylize(truncate_align_center("Description", desc_width), Color::Reset, true, false);
         let accounts = simple_stylize(truncate_align_center("Accounts", accounts_width), Color::Reset, true, false);
+        let int_amount = simple_stylize(truncate_align_center("Internal", internal_delta_width), Color::Reset, true, false);
+        let ext_amount = simple_stylize(truncate_align_center("External", external_delta_width), Color::Reset, true, false);
+        let flow = simple_stylize(truncate_align_center("Flow", internal_flow_width), Color::Reset, true, false);
 
-        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount))?;
+        queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), PrintStyledContent(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount), PrintStyledContent(space), PrintStyledContent(flow))?;
 
         Ok(())
     }
@@ -902,7 +909,7 @@ impl TermElement for TransactionsTE {
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
             let trans_selected = begin_index + index == self.transactions.borrow().selection;
             let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index+1, bottom: element_box.top+index+2};
-            Self::display_transaction(&transaction, trans_box, trans_selected, &self.accounts.borrow())?;
+            Self::display_transaction(&transaction, trans_box, trans_selected, &self.tags.borrow(), &self.accounts.borrow(), &self.transactions.borrow().transactions)?;
         }
 
         Ok(())
@@ -942,7 +949,7 @@ impl TermElement for TransactionsTE {
 
 #[derive(Clone)]
 pub struct AppContent {
-    tags: Tags,
+    tags: Rc<RefCell<Tags>>,
     accounts: Rc<RefCell<Accounts>>,
     transactions: Rc<RefCell<InteractiveTransactions>>,
     transactions_menu: TransactionsTE,
@@ -955,6 +962,7 @@ impl AppContent {
 
         let mut tags = Tags::read_yaml("tags.yaml").unwrap();
         tags.fix();
+        let tags = Rc::new(RefCell::new(tags));
 
         let accounts = Accounts::read_yaml("accounts.yaml").unwrap();
         let accounts = Rc::new(RefCell::new(accounts));
@@ -963,12 +971,12 @@ impl AppContent {
         transactions.fix();
         let transactions = Rc::new(RefCell::new(InteractiveTransactions::new(transactions)));
 
-        Self{tags, accounts: Rc::clone(&accounts), transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions, accounts), purchase: None}
+        Self{tags: Rc::clone(&tags), accounts: Rc::clone(&accounts), transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions, accounts, tags), purchase: None}
     }
 
     fn new_purchase(&mut self, date: Date) {
         let desc_completor = Completor::new(Vec::new());
-        let tag_completor = Completor::new(self.tags.clone().0.into_keys().collect());
+        let tag_completor = Completor::new(self.tags.borrow().clone().0.into_keys().collect());
         let account_completor = Completor::new(self.accounts.borrow().clone().0.into_keys().collect());
 
         self.purchase = Some(PurchaseInput::new(date, desc_completor, tag_completor, account_completor));
