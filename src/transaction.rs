@@ -105,6 +105,10 @@ impl Transactions {
         index
     }
 
+    pub fn remove(&mut self, index: usize) {
+        self.0.remove(index);
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

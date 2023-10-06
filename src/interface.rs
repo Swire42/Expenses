@@ -718,6 +718,27 @@ impl InteractiveTransactions {
         self.selection = index;
         index
     }
+
+    pub fn remove(&mut self) {
+        if self.selection < self.transactions.len() {
+            self.transactions.remove(self.selection);
+            if self.selection == self.transactions.len() {
+                self.prev();
+            }
+        }
+    }
+
+    pub fn prev(&mut self) {
+        if self.selection > 0 {
+            self.selection -= 1;
+        }
+    }
+
+    pub fn next(&mut self) {
+        if self.selection + 1 < self.transactions.len() {
+            self.selection += 1;
+        }
+    }
 }
 
 
@@ -850,8 +871,13 @@ impl TransactionsTE {
 
 impl TermElement for TransactionsTE {
     fn display(&self, element_box: TermBox, _active: bool) -> crossterm::Result<()> {
+        use crossterm::{queue, style::Print};
         let height = element_box.height();
-        assert!(height > 5);
+        if height < 5 {
+            element_box.begin().goto()?;
+            queue!(stdout(), Print("..."))?;
+            return Ok(());
+        }
         let list_height = height - 1;
 
         let center_index = self.transactions.borrow().selection;
@@ -893,7 +919,23 @@ impl TermElement for TransactionsTE {
     }
 
     fn input(&mut self, event: InputEvent) -> Option<InputEvent> {
-        Some(event)
+        use InputEvent::*;
+
+        match event {
+            Up => {
+                self.transactions.borrow_mut().prev();
+                None
+            },
+            Down => {
+                self.transactions.borrow_mut().next();
+                None
+            },
+            Char('d') => {
+                self.transactions.borrow_mut().remove();
+                None
+            },
+            _ => Some(event),
+        }
     }
 }
 
