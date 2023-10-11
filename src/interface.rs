@@ -2,6 +2,7 @@ use std::io::{stdout};
 use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
+use serde::{Serialize, Deserialize};
 
 use crate::term::*;
 use crate::money::*;
@@ -10,6 +11,7 @@ use crate::completion::Completor;
 use crate::transaction::{Transactions, Transaction, Purchase, Consumers};
 use crate::tags::Tags;
 use crate::accounts::*;
+use crate::yamlrw::YamlRW;
 
 #[derive(Clone)]
 pub struct DateInput {
@@ -748,14 +750,15 @@ pub struct TransactionsTE {
     transactions: Rc<RefCell<InteractiveTransactions>>,
     accounts: Rc<RefCell<Accounts>>,
     tags: Rc<RefCell<Tags>>,
+    cfg: Rc<RefCell<LocalCfg>>,
 }
 
 impl TransactionsTE {
-    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>, accounts: Rc<RefCell<Accounts>>, tags: Rc<RefCell<Tags>>) -> Self {
-        Self{transactions, accounts, tags}
+    pub fn new(transactions: Rc<RefCell<InteractiveTransactions>>, accounts: Rc<RefCell<Accounts>>, tags: Rc<RefCell<Tags>>, cfg: Rc<RefCell<LocalCfg>>) -> Self {
+        Self{transactions, accounts, tags, cfg}
     }
 
-    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool, tags_data: &Tags, accounts_data: &Accounts, transactions_data: &Transactions) -> crossterm::Result<()> {
+    fn display_transaction(transaction: &Transaction, element_box: TermBox, active: bool, cfg_data: &LocalCfg, tags_data: &Tags, accounts_data: &Accounts, transactions_data: &Transactions) -> crossterm::Result<()> {
         use crossterm::{
             queue,
             style::{Print, PrintStyledContent, Color, StyledContent},
@@ -830,10 +833,10 @@ impl TransactionsTE {
         let desc = simple_stylize(truncate_align_left(transaction.desc(), desc_width), Color::Reset, true, active);
         let accounts = stylize_accounts(transaction.accounts(), accounts_width, active, accounts_data);
 
-        let int_amount = stylize_amount(transaction.internal_delta(&"Swire".to_string()), "€", internal_delta_width, active);
-        let ext_amount = stylize_amount(transaction.external_delta(&"Swire".to_string()), "€", external_delta_width, active);
+        let int_amount = stylize_amount(transaction.internal_delta(&cfg_data.account), "€", internal_delta_width, active);
+        let ext_amount = stylize_amount(transaction.external_delta(&cfg_data.account), "€", external_delta_width, active);
 
-        let flow = stylize_amount(transaction.internal_flow(&"Swire".to_string(), tags_data, transactions_data).0, "¤", internal_flow_width, active);
+        let flow = stylize_amount(transaction.internal_flow(&cfg_data.account, tags_data, transactions_data).0, "¤", internal_flow_width, active);
 
         queue!(stdout(), PrintStyledContent(date), PrintStyledContent(space), PrintStyledContent(kind), PrintStyledContent(space), PrintStyledContent(desc), PrintStyledContent(space), Print(accounts), PrintStyledContent(space), PrintStyledContent(int_amount), PrintStyledContent(space), PrintStyledContent(ext_amount), PrintStyledContent(space), PrintStyledContent(flow))?;
 
@@ -909,7 +912,7 @@ impl TermElement for TransactionsTE {
         for (index, transaction) in self.transactions.borrow().transactions().vec()[begin_index..end_index].iter().enumerate() {
             let trans_selected = begin_index + index == self.transactions.borrow().selection;
             let trans_box = TermBox{left: element_box.left, right: element_box.right, top: element_box.top+index+1, bottom: element_box.top+index+2};
-            Self::display_transaction(&transaction, trans_box, trans_selected, &self.tags.borrow(), &self.accounts.borrow(), &self.transactions.borrow().transactions)?;
+            Self::display_transaction(&transaction, trans_box, trans_selected, &self.cfg.borrow(), &self.tags.borrow(), &self.accounts.borrow(), &self.transactions.borrow().transactions)?;
         }
 
         Ok(())
@@ -956,9 +959,17 @@ pub struct AppContent {
     purchase: Option<PurchaseInput>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalCfg {
+    account: AccountRef
+}
+
+impl YamlRW for LocalCfg {}
+
 impl AppContent {
     pub fn new() -> Self {
-        use crate::yamlrw::YamlRW;
+        let cfg = LocalCfg::read_yaml("localcfg.yaml").unwrap();
+        let cfg = Rc::new(RefCell::new(cfg));
 
         let mut tags = Tags::read_yaml("tags.yaml").unwrap();
         tags.fix();
@@ -971,7 +982,7 @@ impl AppContent {
         transactions.fix();
         let transactions = Rc::new(RefCell::new(InteractiveTransactions::new(transactions)));
 
-        Self{tags: Rc::clone(&tags), accounts: Rc::clone(&accounts), transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions, accounts, tags), purchase: None}
+        Self{tags: Rc::clone(&tags), accounts: Rc::clone(&accounts), transactions: Rc::clone(&transactions), transactions_menu: TransactionsTE::new(transactions, accounts, tags, cfg), purchase: None}
     }
 
     fn new_purchase(&mut self, date: Date) {
@@ -989,7 +1000,6 @@ impl AppContent {
 
 impl Drop for AppContent {
     fn drop(&mut self) {
-        use crate::yamlrw::YamlRW;
         self.transactions.borrow_mut().transactions().write_yaml("data.yaml").unwrap();
     }
 }
